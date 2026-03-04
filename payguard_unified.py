@@ -604,9 +604,26 @@ class PayGuard:
             return
         self.last_alert_time = now
 
+        # Plain-language dialog body — no percentages or technical jargon.
+        # Technical detail stays in the log and notification banner only.
+        _friendly = {
+            'PHISHING DETECTED!':        "Be careful — this page may be trying to steal your information. Do not enter any passwords or personal details.",
+            'SCAM DETECTED!':            "This looks like a scam. Do not call any phone numbers, click any links, or share personal information.",
+            'HIGH RISK SITE DETECTED!':  "This website looks dangerous. Close it and stay safe.",
+            'KNOWN THREAT Detected!':    "This is a known dangerous site. Close it immediately.",
+            'Suspicious Site Detected!': "This site looks suspicious. Stay safe and do not share personal information.",
+            'Phishing Email Detected!':  "This email may be trying to steal your information. Do not click any links or attachments.",
+            'SMS Scam Detected!':        "This looks like a scam text message. Do not call back or reply.",
+            'Suspicious URL Detected!':  "This link looks suspicious. Stay safe and do not enter personal information.",
+            'PHISHING WEBSITE Detected!': "This website is designed to steal your information. Close it immediately.",
+            'Insecure Website Detected!': "This website is not secure. Be careful sharing personal information.",
+        }
+        dialog_body = _friendly.get(title, "Stay safe online. Do not share personal information or click links you do not trust.")
+
         try:
             clean_title = title.replace('"', '\\"').replace('\n', ' ')
             clean_message = message.replace('"', '\\"').replace('\n', ' ')
+            clean_body = dialog_body.replace('"', '\\"')
 
             if critical:
                 subprocess.Popen(
@@ -618,7 +635,7 @@ class PayGuard:
                 subprocess.run(["osascript", "-e", notif_cmd], capture_output=True, timeout=5)
 
                 dialog_cmd = (
-                    f'display dialog "{clean_message}\\n\\n'
+                    f'display dialog "{clean_body}\\n\\n'
                     f'PayGuard is protecting you from threats!" '
                     f'with title "{clean_title}" '
                     f'buttons {{"OK", "More Info"}} default button "OK" '
@@ -1362,17 +1379,31 @@ class PayGuard:
                 r'(?:call|dial|contact)[^0-9]{0,25}[\+\(]?\d[\d\s\-\(\)]{7,}',
                 cleaned, re.I
             ))
+            # Credential gate: ONLY truly phishing-specific phrases.
+            # Do NOT include generic terms like 'password', 'credit card', 'account number',
+            # 'routing number', 'pin number' — those appear on every legitimate login /
+            # checkout page and are the primary source of false positives against login screens.
             has_credential_request = any(w in tl for w in [
-                'password', 'credit card', 'social security', 'ssn', 'cvv',
-                'account number', 'routing number', 'pin number',
+                'social security', 'ssn', 'cvv',
                 'verify your', 'confirm your identity', 'update your payment',
+                'enter your card', 'billing information',
             ])
 
-            if not (has_suspicious_url or has_phone or has_credential_request):
+            gate2_reason = (
+                'suspicious_url' if has_suspicious_url else
+                'phone_number' if has_phone else
+                'credential_phrase' if has_credential_request else
+                None
+            )
+            if gate2_reason is None:
                 logger.debug(
                     f"BERT: {spam_prob:.0%} spam_prob but no structural indicator — suppressed"
                 )
                 return None
+            logger.debug(
+                f"BERT gate2 passed via {gate2_reason} at {spam_prob:.0%}: "
+                f"{cleaned[:150]!r}"
+            )
 
             conf = int(spam_prob * 100)
             return ('BERT_PHISHING', f"BERT: phishing content detected ({conf}% confidence)", conf)
