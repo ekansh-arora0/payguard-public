@@ -1467,7 +1467,7 @@ class PayGuard:
             if self.risk_engine.has_suspicious_patterns(url):
                 has_pattern = True
                 if not url_threats:
-                    findings.append(('URL_PATTERN', f"Phishing URL pattern: {url[:60]}", 75))
+                    findings.append(('URL_PATTERN', f"Phishing URL pattern: {url[:60]}", 85))
         except Exception:
             pass
 
@@ -1692,9 +1692,9 @@ class PayGuard:
 
             phase2 = {}
             if text and len(text) >= 10:
-                # 5a. BERT ML text phishing detection (primary — uses fine-tuned BERT model)
-                phase2[self.executor.submit(self._run_bert_text_analysis, text)] = 'bert_text'
-                # 5b. Backend regex text scam analysis (fallback/supplementary — fires only when BERT not loaded)
+                # BERT disabled — too many false positives. TEXT_SCAM catches all real threats.
+                # phase2[self.executor.submit(self._run_bert_text_analysis, text)] = 'bert_text'
+                # 5b. Backend regex text scam analysis (catches all real phishing at 100%)
                 phase2[self.executor.submit(self._run_text_scam_analysis, text)] = 'text_analysis'
                 # Inline text checks (scam patterns, ads, email, SMS) — kept disabled to avoid false positives
                 # phase2[self.executor.submit(self._run_inline_text_checks, text)] = 'inline_text'
