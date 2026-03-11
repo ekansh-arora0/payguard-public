@@ -1112,24 +1112,32 @@ class PayGuard:
 
             findings = []
             confidence = 0
+            condition_count = 0
 
+            # Require MULTIPLE conditions to fire - single conditions are not enough
             if ratio > 0.35:
                 findings.append(f'high_freq_ratio_{ratio:.3f}')
                 confidence = max(confidence, 35)
+                condition_count += 1
 
             if freq_entropy < 4.5:
                 findings.append(f'low_entropy_{freq_entropy:.2f}')
                 confidence = max(confidence, 30)
+                condition_count += 1
 
             if freq_variance > 1.5:
                 findings.append(f'high_variance_{freq_variance:.2f}')
                 confidence = max(confidence, 25)
+                condition_count += 1
 
             center = log_magnitude[ch - 5:ch + 5, cw - 5:cw + 5]
             if np.std(center) < 0.1:
                 findings.append('smooth_center')
                 confidence = max(confidence, 20)
+                condition_count += 1
 
+            # EXIF/XMP metadata with AI keywords is VERY reliable - high confidence
+            has_ai_metadata = False
             try:
                 meta_img = img_full if img_full is not None else img
                 exif = meta_img.getexif()
@@ -1140,7 +1148,7 @@ class PayGuard:
                     for kw in ai_keywords:
                         if kw in exif_str.lower():
                             findings.append(f'exif_{kw}')
-                            confidence = max(confidence, 80)
+                            has_ai_metadata = True
             except Exception:
                 pass
 
@@ -1155,11 +1163,18 @@ class PayGuard:
                     for kw in ai_keywords:
                         if kw in xmp_str:
                             findings.append(f'xmp_{kw}')
-                            confidence = max(confidence, 85)
+                            has_ai_metadata = True
             except Exception:
                 pass
 
-            is_ai = confidence > 50
+            if has_ai_metadata:
+                confidence = 90
+                condition_count += 3  # Treat as multiple conditions
+
+            # Require AT LEAST 2 spectral conditions OR AI metadata to fire
+            # Single conditions are too common in normal images (false positives)
+            is_ai = condition_count >= 2 and confidence >= 50
+
             return is_ai, confidence, findings
 
         except ImportError:
