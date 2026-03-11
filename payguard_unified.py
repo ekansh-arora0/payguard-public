@@ -1317,25 +1317,27 @@ class PayGuard:
             # Count how many tiles have ≥20% alert color
             hot_tiles = sum(1 for r in tile_ratios if r >= 0.20)
             
-            # Count tiles with ANY alert color (≥5%) - video detection
+            # Count tiles with ANY alert color (≥5%) - video/content detection
             tiles_with_any_alert = sum(1 for r in tile_ratios if r >= 0.05)
 
             # If many tiles have ANY alert color, it's likely video/content, not a scam popup
-            # Scam popups are isolated to 1-3 tiles; videos spread across many
-            if tiles_with_any_alert >= 6:
+            # Scam popups are isolated to 1-2 tiles; videos spread across many
+            if tiles_with_any_alert >= 5:
                 logger.debug(f"Visual: {tiles_with_any_alert}/16 tiles have alert color - likely video/content, skipping")
                 return None
 
-            # Strong alert: 45%+ color in ≤2 tiles → isolated popup/overlay
-            if tile_max >= 0.45 and hot_tiles <= 2:
+            # VERY STRICT: Require 55%+ color in EXACTLY 1 tile for strong alerts
+            # Videos may have isolated red but rarely at 55%+ in a single tile
+            # This eliminates false positives from red UI elements, thumbnails, etc.
+            if tile_max >= 0.55 and hot_tiles == 1:
                 conf = min(85, 55 + int(tile_max * 50))
                 return ('VISUAL', f"Alert overlay detected: hotspot={tile_max:.0%} in {hot_tiles}/16 tiles", conf)
 
-            # Moderate alert: 32%+ in only 1-2 tiles → possible alert (lower confidence)
-            if tile_max >= 0.32 and hot_tiles <= 2:
-                return ('VISUAL', f"Possible alert region: hotspot={tile_max:.0%} in {hot_tiles}/16 tiles", 42)
+            # Very rare: 50%+ in only 1 tile - very strong isolated signal
+            if tile_max >= 0.50 and hot_tiles <= 1:
+                return ('VISUAL', f"Possible alert region: hotspot={tile_max:.0%} in {hot_tiles}/16 tiles", 50)
 
-            # Anything else = scattered color = normal page content, ignore
+            # Anything else = normal content, video, or scattered colors - ignore
             return None
 
         except Exception as e:
