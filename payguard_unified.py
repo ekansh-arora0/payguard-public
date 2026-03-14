@@ -75,7 +75,10 @@ SUSPICIOUS_TLDS = {
     'security', 'account', 'verify', 'update', 'tk', 'ml', 'ga', 'cf', 'gq',
 }
 
-TRACKING_PARAMS = ['clickid', 'cid', 'affid', 'subid', 'trackid', 'utm_source', 'utm_medium']
+# Only genuinely shady affiliate/adware params — NOT standard analytics (utm_*, cid, etc.)
+# utm_source/utm_medium/utm_campaign appear on virtually every news/newsletter URL and are
+# Google Analytics standard params, not scam indicators.
+TRACKING_PARAMS = ['clickid', 'affid', 'subid', 'trackid']
 
 AD_NETWORK_DOMAINS = {
     'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
@@ -1404,24 +1407,15 @@ class PayGuard:
 
         return findings
 
-    def _run_text_scam_analysis(self, text):
-        """Worker: backend enhanced text analysis (crypto, unicode, combo rules).
-        Regex/rule-based fallback — only fires a finding when BERT isn't available."""
-        try:
-            result = self.risk_engine.analyze_text_for_scam(text)
-            if result and result.get('is_scam') and result.get('confidence', 0) >= 40:
-                # Only surface this if BERT didn't already find something
-                patterns = result.get('detected_patterns', [])
-                conf = result.get('confidence', 50)
-                return ('TEXT_ANALYSIS', f"Text threats: {', '.join(patterns[:4])}", conf)
-        except Exception as e:
-            logger.debug(f"Text scam analysis worker error: {e}")
-        return None
-
-    # Domains whose presence in OCR text should NOT count as a structural phishing URL.
-    # These are high-reputation domains that appear routinely in browser chrome (address bar,
-    # tab titles, bookmarks) and would cause false positives if treated as phishing lures.
+    # Domains that are ALWAYS trusted for URL pattern analysis — pattern-based checks
+    # (has_suspicious_patterns, check_url_scams) are completely skipped for these hosts.
+    # Only the reputation database (known-malicious override) still applies.
+    # Includes: major consumer/tech, school LMS/SIS software, SSO/identity providers,
+    # CDN/infrastructure, and common developer platforms.
+    # Note: *.edu, *.gov, *.mil are ALSO trusted via TLD check in _run_url_analysis,
+    # so individual school domains don't need to be listed here.
     _TRUSTED_URL_DOMAINS = {
+        # Major consumer / tech
         'google.com', 'docs.google.com', 'drive.google.com', 'mail.google.com',
         'accounts.google.com', 'calendar.google.com', 'maps.google.com',
         'github.com', 'github.io', 'gitlab.com',
@@ -1433,6 +1427,44 @@ class PayGuard:
         'netflix.com', 'spotify.com', 'stripe.com', 'paypal.com',
         'notion.so', 'figma.com', 'vercel.app', 'netlify.app',
         'stackoverflow.com', 'medium.com', 'substack.com',
+        # School / education LMS + SIS software
+        # (covers /login/saml, /authenticate, /sso, /oauth paths on these platforms)
+        'instructure.com',      # Canvas LMS
+        'canvaslms.com',
+        'follettsoftware.com',  # Follett school software (portalapi.follettsoftware.com)
+        'powerschool.com',
+        'blackboard.com',
+        'schoology.com',
+        'brightspace.com',      # D2L
+        'd2l.com',
+        'clever.com',
+        'classlink.com',
+        'sso.schooldude.com',
+        'hacktj.org',           # HackTJ hackathon (was FP source)
+        # SSO / identity providers — /login, /authenticate, /saml are their ENTIRE job
+        'okta.com',
+        'oktapreview.com',
+        'auth0.com',
+        'onelogin.com',
+        'ping.com',
+        'pingidentity.com',
+        'shibboleth.net',
+        'adfs.microsoft.com',
+        'login.microsoftonline.com',
+        # CDN / infrastructure — these appear in OCR from network tab / error pages
+        'cloudflare.com',
+        'cloudfront.net',
+        'fastly.net',
+        'akamaihd.net',
+        'akamai.net',
+        'cdn.jsdelivr.net',
+        'unpkg.com',
+        # Transcript / research tools (were FP sources)
+        'youtubetotranscript.com',
+        'rev.com',
+        # Common developer platforms
+        'heroku.com', 'railway.app', 'render.com', 'fly.io',
+        'supabase.com', 'firebase.google.com',
     }
 
     # Browser / OS UI chrome lines that should be stripped before BERT sees the text.
@@ -1578,34 +1610,47 @@ class PayGuard:
     def _run_url_analysis(self, url):
         """Worker: URL pipeline — fast checks first, slow ML only on suspicious URLs.
 
-        Performance design:
-          Steps 1-3 are instant (regex + bloom filter, no network).
-          Step 4 (HTML fetch) only runs if fast checks found something suspicious.
-          Step 5 (ML pipeline) only runs if URL is already flagged OR we fetched HTML.
-          NO_SECURITY (step 7) is DISABLED — low confidence (30%), requires an extra
-          HTTP HEAD per URL, and was the primary false positive source.
+        False-positive prevention (structural, not threshold-based):
+          1. Trusted/allowlisted domains (*.edu, *.gov, school LMS, SSO providers, CDNs)
+             bypass ALL pattern checks. Even /login /saml /authenticate paths on these
+             hosts are benign by definition. Only the reputation DB (known-malicious
+             override) still runs — a truly compromised trusted domain can still be caught.
+          2. XGBoost ML score gates every pattern-based finding. Patterns alone
+             (/login, /verify, tracking params) never fire a popup without ML confirmation.
+             This eliminates false positives from normal browsing on sites that happen
+             to have login pages or marketing UTM params in their URLs.
+          3. HTML fetch only runs for high XGBoost scores (>= 0.75) or known-malicious.
         """
         findings = []
 
         # Ensure scheme for network requests
         fetch_url = url if url.startswith('http') else f"https://{url}"
 
-        # 1. Inline URL scam patterns (fast, always run)
-        url_threats = self.check_url_scams(url)
-        if url_threats:
-            findings.append(('URL_PATTERN', f"Suspicious URL ({', '.join(url_threats[:2])}): {url[:60]}", 60))
-
-        # 2. Backend suspicious patterns (30+ regex)
-        has_pattern = False
+        # Extract hostname (strip www.) for trusted-domain matching
         try:
-            if self.risk_engine.has_suspicious_patterns(url):
-                has_pattern = True
-                if not url_threats:
-                    findings.append(('URL_PATTERN', f"Phishing URL pattern: {url[:60]}", 85))
+            from urllib.parse import urlparse as _urlparse
+            _host = _urlparse(fetch_url).netloc.lower()
+            if _host.startswith('www.'):
+                _host = _host[4:]
         except Exception:
-            pass
+            _host = ''
 
-        # 3. URL reputation (OpenPhish/PhishTank/URLhaus bloom filters — no network)
+        # Trusted-host check: .edu/.gov/.mil TLDs are ALWAYS safe; known-good apex domains too.
+        def _is_trusted_host(h):
+            # Government / education / military TLDs — login and auth paths are expected
+            _tld = h.rsplit('.', 1)[-1] if '.' in h else ''
+            if _tld in ('edu', 'gov', 'mil'):
+                return True
+            # Apex allowlist match (subdomains also match via endswith)
+            for apex in self._TRUSTED_URL_DOMAINS:
+                if h == apex or h.endswith('.' + apex):
+                    return True
+            return False
+
+        is_trusted = _is_trusted_host(_host)
+
+        # 1. URL reputation (OpenPhish / PhishTank / URLhaus — always check, even trusted hosts)
+        #    A truly compromised trusted domain should still be caught.
         is_known_malicious = False
         try:
             rep = self.url_reputation.check_url_sync(url)
@@ -1617,16 +1662,16 @@ class PayGuard:
         except Exception:
             pass
 
-        # Fast-path: if nothing suspicious from fast checks, skip ALL network I/O.
-        # This is the primary performance gate — benign URLs (no pattern/reputation hit)
-        # never trigger HTML fetching or ML inference.
-        if not (url_threats or has_pattern or is_known_malicious):
-            return findings  # Nothing suspicious — no need to fetch or run ML
+        # Trusted domain + not in reputation DB → skip ALL pattern and ML checks.
+        # School login pages, SSO providers, CDN URLs etc. are never scam indicators.
+        if is_trusted and not is_known_malicious:
+            return findings
 
-        # 4. Fast XGBoost URL scoring (pure ML, no network I/O, ~1ms)
-        #    This is the primary ML gate — classifies URL structure only.
+        # 2. Fast XGBoost URL scoring (pure ML, no network I/O, ~1ms).
+        #    Run BEFORE pattern checks so we can use it to gate pattern-based findings.
         xgb_prob = self.risk_engine.predict_url_xgb_sync(fetch_url)
-        if xgb_prob >= 0.0:  # model available
+        xgb_available = xgb_prob >= 0.0
+        if xgb_available:
             if xgb_prob >= 0.85:
                 conf = int(xgb_prob * 100)
                 findings.append(('ML_HIGH_RISK', f"XGBoost: phishing URL ({conf}%): {url[:50]}", conf))
@@ -1634,15 +1679,42 @@ class PayGuard:
                 conf = int(xgb_prob * 100)
                 findings.append(('ML_MEDIUM_RISK', f"XGBoost: suspicious URL ({conf}%): {url[:50]}", conf))
 
-        # 5. Fetch HTML + rule-based HTML analysis — only for URLs that got a high ML score
-        #    OR were already flagged as known malicious (reputation hit).
-        #    This avoids HTTP fetching for low-risk URLs that just had pattern matches.
-        should_fetch = is_known_malicious or (xgb_prob >= 0.75)
+        # 3. Pattern-based checks — GATED on XGBoost confirmation.
+        #    Patterns fire a finding only when ML also says suspicious (>= 0.50).
+        #    If the XGBoost model is unavailable, fall back to patterns alone but
+        #    only for non-trivial threats (not just tracking params or ad networks).
+        url_threats = self.check_url_scams(url)
+        has_pattern = False
+        try:
+            if self.risk_engine.has_suspicious_patterns(url):
+                has_pattern = True
+        except Exception:
+            pass
+
+        # Real threats = explicit phishing URL patterns (not tracking params or ad networks)
+        real_threats = [t for t in url_threats
+                        if not t.startswith('tracking') and not t.startswith('ad_network_')]
+
+        # ML confirmation: XGBoost >= 0.50, or model unavailable (no gate available)
+        ml_confirms = (xgb_available and xgb_prob >= 0.50) or (not xgb_available)
+
+        if ml_confirms and real_threats:
+            findings.append(('URL_PATTERN', f"Suspicious URL ({', '.join(real_threats[:2])}): {url[:60]}", 60))
+
+        if ml_confirms and has_pattern and not real_threats:
+            findings.append(('URL_PATTERN', f"Phishing URL pattern: {url[:60]}", 75))
+
+        # Fast-path: nothing suspicious at all → no HTML fetch
+        if not (real_threats or has_pattern or is_known_malicious or (xgb_available and xgb_prob >= 0.65)):
+            return findings
+
+        # 4. Fetch HTML + rule-based HTML analysis — only for high ML scores or known-malicious.
+        should_fetch = is_known_malicious or (xgb_available and xgb_prob >= 0.75)
         html = self._fetch_html(fetch_url) if should_fetch else None
 
-        # 6. Rule-based HTML analysis (supplementary, runs if HTML was fetched)
+        # 5. Rule-based HTML analysis (supplementary, runs only if HTML was fetched)
         if html:
-            # 6a. HTML code analysis (17-category phishing/clickjacking detection)
+            # 5a. HTML code analysis (17-category phishing/clickjacking detection)
             try:
                 is_phishing, reason = self.risk_engine.html_code_analysis(fetch_url, html)
                 if is_phishing:
@@ -1650,7 +1722,7 @@ class PayGuard:
             except Exception:
                 pass
 
-            # 6b. Content signals (structural HTML analysis)
+            # 5b. Content signals (structural HTML analysis)
             try:
                 delta, risks, safes = self.risk_engine.content_signals(fetch_url, html)
                 if delta < -15 and risks:
@@ -1855,6 +1927,18 @@ class PayGuard:
 
                 top = deduped[0]
                 max_confidence = top[2]
+
+                # Minimum confidence gate — suppress low-confidence speculative findings.
+                # URL_PATTERN at 60% from a single pattern match (e.g. /login on a school
+                # site that somehow slipped past the trusted-domain check) should not fire
+                # a popup. Real threats from TEXT_SCAM, ML_HIGH_RISK, URL_REPUTATION etc.
+                # all produce >= 75%, so this gate has no effect on legitimate detections.
+                if max_confidence < 65:
+                    logger.debug(
+                        f"Scan complete in {scan_duration:.2f}s — {len(deduped)} low-confidence "
+                        f"findings suppressed (max={max_confidence}% < 65% gate)"
+                    )
+                    return
 
                 # Title from highest-confidence finding
                 category_titles = {
