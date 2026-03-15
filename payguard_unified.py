@@ -1683,10 +1683,12 @@ class PayGuard:
         #    Patterns fire a finding only when ML also says suspicious (>= 0.50).
         #    If the XGBoost model is unavailable, fall back to patterns alone but
         #    only for non-trivial threats (not just tracking params or ad networks).
-        url_threats = self.check_url_scams(url)
+        # IMPORTANT: pass fetch_url (with scheme) so urlparse() correctly extracts
+        # the netloc/TLD. Without a scheme, urlparse returns empty netloc → TLD = ''.
+        url_threats = self.check_url_scams(fetch_url)
         has_pattern = False
         try:
-            if self.risk_engine.has_suspicious_patterns(url):
+            if self.risk_engine.has_suspicious_patterns(fetch_url):
                 has_pattern = True
         except Exception:
             pass
