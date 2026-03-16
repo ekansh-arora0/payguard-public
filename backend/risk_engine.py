@@ -3193,11 +3193,14 @@ class RiskScoringEngine:
             p = float(p_dire)
 
             # Check for camera metadata (strong indicator of real photo)
+            # Tags: 271=Make, 272=Model, 42036=LensModel
+            has_camera_exif = False
             try:
                 exif = getattr(img, "getexif", lambda: None)()
                 if exif and any(exif.get(k) for k in [271, 272, 42036]):
-                    if p < 0.995:
-                        p *= 0.2
+                    has_camera_exif = True
+                    if p < 0.999:
+                        p *= 0.15
             except Exception:
                 pass
 
@@ -3266,13 +3269,27 @@ class RiskScoringEngine:
             try:
                 info = getattr(img, "info", {}) or {}
                 has_icc = bool(info.get("icc_profile"))
+                has_jfif = bool(info.get("jfif") or info.get("jfif_version"))
                 ar = float(max(w, h)) / float(max(1, min(w, h)))
                 is_squareish = ar <= 1.12
+                # Standard camera aspect ratios: 4:3 (1.33), 3:2 (1.5), 16:9 (1.78)
+                is_standard_photo_ar = any(abs(ar - r) < 0.08 for r in [1.33, 1.5, 1.78])
 
-                if has_icc and (not is_squareish) and p < 0.999:
-                    p *= 0.25
-                elif has_icc and p < 0.95:
-                    p *= 0.5
+                # Combined real-photo signal: multiple indicators present
+                real_photo_signals = sum([
+                    has_icc,
+                    has_jfif,
+                    has_camera_exif,
+                    is_standard_photo_ar and not is_squareish,
+                ])
+
+                if real_photo_signals >= 2 and p < 0.999:
+                    # Strong evidence of real photo (multiple signals)
+                    p *= 0.10
+                elif has_icc and (not is_squareish) and p < 0.999:
+                    p *= 0.20
+                elif has_icc and p < 0.97:
+                    p *= 0.45
             except Exception:
                 pass
 

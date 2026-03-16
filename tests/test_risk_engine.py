@@ -270,9 +270,11 @@ class TestContentSignals:
         assert any("same-origin" in s.lower() for s in safe)
 
     def test_password_input(self, engine):
+        """Password input alone should NOT be flagged as risky — legitimate sites have login forms."""
         html = '<input type="password">'
         delta, risk, safe = engine._content_signals("https://example.com", html)
-        assert any("password" in r.lower() for r in risk)
+        # Intentionally removed: password-only detection causes FPs on legitimate login pages
+        assert not any("password" in r.lower() for r in risk)
 
 
 # ---------------------------------------------------------------------------

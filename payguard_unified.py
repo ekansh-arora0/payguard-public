@@ -965,9 +965,19 @@ class PayGuard:
         try:
             parsed = urlparse(url)
             domain = parsed.netloc.lower()
+            if domain.startswith('www.'):
+                domain = domain[4:]
             tld = domain.rsplit('.', 1)[-1] if '.' in domain else ''
             if tld in SUSPICIOUS_TLDS:
-                threats.append(f"suspicious_tld_{tld}")
+                # Don't flag suspicious TLD if the domain is in the trusted list
+                # or is a well-known high-reputation host (e.g. yandex.ru, vk.ru)
+                is_trusted = False
+                for apex in self._TRUSTED_URL_DOMAINS:
+                    if domain == apex or domain.endswith('.' + apex):
+                        is_trusted = True
+                        break
+                if not is_trusted:
+                    threats.append(f"suspicious_tld_{tld}")
 
             for ad_domain in AD_NETWORK_DOMAINS:
                 if ad_domain in domain:
@@ -1871,7 +1881,13 @@ class PayGuard:
             # We match full URLs or domain-like strings ending in typical TLDs
             domain_regex = r'\b(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s\'"<>)}\]]*)?\b'
             raw_urls = re.findall(domain_regex, text) if text else []
-            
+
+            # Filter out URLs that appear to be from browser address bar / chrome
+            # These are the URLs the user is currently visiting, not phishing content
+            cleaned_text = self._clean_ocr_for_bert(text) if text else ''
+            chrome_urls = set(raw_urls) - set(re.findall(domain_regex, cleaned_text)) if cleaned_text else set()
+            raw_urls = [u for u in raw_urls if u not in chrome_urls]
+
             # Filter out false positives — file paths, code files, image files etc.
             # that the domain regex can match (e.g. "tescregex.py", "applescript.py")
             _code_exts = {

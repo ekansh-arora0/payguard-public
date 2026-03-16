@@ -185,7 +185,10 @@ class TestRiskEndpoints:
             mock_http.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
             mock_http.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            resp = client.post("/api/v1/risk", json={"url": "https://example.com"})
+            resp = client.post(
+                "/api/v1/risk?fast=false&follow_redirects=false",
+                json={"url": "https://example.com"},
+            )
             assert resp.status_code == 200
             body = resp.json()
             assert body["trust_score"] == 85.0

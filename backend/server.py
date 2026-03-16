@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
-from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -730,10 +729,8 @@ async def check_risk(
                 final_url, redirect_chain = await check_redirects(url)
                 if len(redirect_chain) > 1:
                     logger.info(f"URL redirects: {' -> '.join(redirect_chain)}")
-                    redirect_risk_factors.append(
-                        f"Redirect chain detected ({len(redirect_chain)} hops)"
-                    )
-                    # Check if any redirect in chain is suspicious
+                    # Check if any redirect in chain goes to a non-trusted domain
+                    has_untrusted_hop = False
                     for redirect_url in redirect_chain[1:]:  # Skip original
                         parsed_redirect = urlparse(redirect_url)
                         redirect_domain = (
@@ -745,12 +742,19 @@ async def check_risk(
                         # Avoid self-redirect false positives on trusted domains (OAuth flows, etc.)
                         if risk_engine._is_trusted_domain(redirect_domain):
                             continue
+                        has_untrusted_hop = True
                         redirect_analysis = await quick_risk_analysis(redirect_url)
                         if redirect_analysis.risk_level == RiskLevel.HIGH:
                             redirect_risk_factors.append(
                                 f"Redirects to suspicious site: {redirect_url}"
                             )
                             break
+                    # Only flag redirect chain if at least one hop is to an untrusted domain
+                    if has_untrusted_hop:
+                        redirect_risk_factors.insert(
+                            0,
+                            f"Redirect chain detected ({len(redirect_chain)} hops)",
+                        )
             except Exception as e:
                 logger.warning(f"Redirect check failed: {e}")
 
