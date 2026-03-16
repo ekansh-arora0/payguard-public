@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
+from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -422,7 +424,6 @@ async def check_https_support(domain: str) -> tuple[bool, str]:
 async def quick_risk_analysis(url: str, check_ssl: bool = True) -> RiskScore:
     """Production-ready fast URL analysis - detects phishing patterns reliably."""
     import re
-    from urllib.parse import urlparse
 
     # Normalize URL - add https:// if no protocol specified
     if not url.startswith(("http://", "https://")):
@@ -432,6 +433,24 @@ async def quick_risk_analysis(url: str, check_ssl: bool = True) -> RiskScore:
     parsed = urlparse(url)
     domain = parsed.netloc or parsed.path
     domain_lower = domain.lower()
+    domain_clean = domain_lower.split(":")[0].lstrip("www.")
+
+    if domain_clean.endswith((".edu", ".gov", ".mil")) or risk_engine._is_trusted_domain(domain_clean):
+        return RiskScore(
+            url=url,
+            domain=domain,
+            risk_level=RiskLevel.LOW,
+            trust_score=95.0,
+            risk_factors=["No significant risk factors detected"],
+            safety_indicators=["Verified legitimate domain"],
+            ssl_valid=True,
+            domain_age_days=None,
+            has_payment_gateway=False,
+            detected_gateways=[],
+            merchant_reputation=None,
+            education_message="✅ This website appears to be legitimate. Always verify you're on the correct site before entering sensitive information.",
+            checked_at=datetime.now(timezone.utc),
+        )
 
     risk_factors = []
     safety_indicators = []
@@ -461,6 +480,24 @@ async def quick_risk_analysis(url: str, check_ssl: bool = True) -> RiskScore:
                 f"{brand}.co",
                 f"{brand}.com",  # already covered
             ]
+            # Domain-specific official hostnames (common non-.com brand domains)
+            if brand == "microsoft":
+                real_domains.extend([
+                    "microsoftonline.com",
+                    "office.com",
+                    "live.com",
+                    "outlook.com",
+                ])
+            elif brand == "google":
+                real_domains.extend([
+                    "googleapis.com",
+                    "gstatic.com",
+                    "youtube.com",
+                ])
+            elif brand == "paypal":
+                real_domains.extend(["paypalobjects.com", "venmo.com"])
+            elif brand == "apple":
+                real_domains.extend(["icloud.com"])
             is_real = any(real in domain_lower for real in real_domains)
 
             if not is_real:
@@ -698,6 +735,16 @@ async def check_risk(
                     )
                     # Check if any redirect in chain is suspicious
                     for redirect_url in redirect_chain[1:]:  # Skip original
+                        parsed_redirect = urlparse(redirect_url)
+                        redirect_domain = (
+                            (parsed_redirect.netloc or parsed_redirect.path)
+                            .split(":")[0]
+                            .lower()
+                            .lstrip("www.")
+                        )
+                        # Avoid self-redirect false positives on trusted domains (OAuth flows, etc.)
+                        if risk_engine._is_trusted_domain(redirect_domain):
+                            continue
                         redirect_analysis = await quick_risk_analysis(redirect_url)
                         if redirect_analysis.risk_level == RiskLevel.HIGH:
                             redirect_risk_factors.append(
@@ -706,6 +753,24 @@ async def check_risk(
                             break
             except Exception as e:
                 logger.warning(f"Redirect check failed: {e}")
+
+        def _apply_overlay_text_signal(score: RiskScore) -> RiskScore:
+            try:
+                if body.overlay_text:
+                    scam_res = risk_engine._analyze_text_for_scam(body.overlay_text)
+                    if scam_res.get("is_scam"):
+                        score.risk_level = RiskLevel.HIGH
+                        score.trust_score = max(
+                            0.0, min(100.0, min(score.trust_score, 20.0))
+                        )
+                        reason = (
+                            f"Scam popup detected (confidence: {int(scam_res.get('confidence', 0))}%)"
+                        )
+                        if reason not in score.risk_factors:
+                            score.risk_factors.append(reason)
+            except Exception:
+                pass
+            return score
 
         # Use quick analysis for demo speed
         if fast:
@@ -719,6 +784,7 @@ async def check_risk(
                 if any("Redirects to suspicious" in rf for rf in redirect_risk_factors):
                     risk_score.risk_level = RiskLevel.HIGH
                     risk_score.trust_score = max(0, risk_score.trust_score - 20)
+            risk_score = _apply_overlay_text_signal(risk_score)
             _record_request("/risk", 200, time.time() - t0, risk_score.risk_level.value)
             return risk_score
 
@@ -736,19 +802,7 @@ async def check_risk(
         except Exception:
             html = None
         risk_score = await risk_engine.calculate_risk(final_url, content=html)
-        # Overlay text scam analysis if provided
-        try:
-            if request.overlay_text:
-                scam_res = risk_engine._analyze_text_for_scam(request.overlay_text)
-                if scam_res.get("is_scam"):
-                    risk_score.risk_level = RiskLevel.HIGH
-                    risk_score.trust_score = max(
-                        0.0, min(100.0, min(risk_score.trust_score, 20.0))
-                    )
-                    reason = f"Scam popup detected (confidence: {int(scam_res.get('confidence', 0))}%)"
-                    risk_score.risk_factors.append(reason)
-        except Exception:
-            pass
+        risk_score = _apply_overlay_text_signal(risk_score)
 
         await db.risk_checks.insert_one(risk_score.model_dump())
         await db.metrics.insert_one(
@@ -1317,10 +1371,50 @@ async def post_media_risk_bytes(
         p = risk_engine._predict_image_fake_bytes(b, static=static)
 
         if p is None:
-            score = 0.0
+            raw_score = 0.0
             p = 0.0
         else:
-            score = float(p) * 100.0
+            raw_score = float(p) * 100.0
+
+        # FP guardrail: require stronger structural confidence before declaring AI.
+        # This keeps legitimate photos from being labeled as AI-generated.
+        min_dim = 0
+        has_cameraish_meta = False
+        try:
+            import io
+            from PIL import Image
+
+            im = Image.open(io.BytesIO(b))
+            w, h = im.size
+            min_dim = min(w, h)
+            info = getattr(im, "info", {}) or {}
+            has_cameraish_meta = bool(info.get("icc_profile") or info.get("exif"))
+        except Exception:
+            pass
+
+        is_graphic_or_logo = False
+        try:
+            is_graphic_or_logo = risk_engine._is_graphic_or_logo_bytes(b)
+        except Exception:
+            is_graphic_or_logo = False
+
+        ai_trigger = bool(
+            (raw_score >= 99.5)
+            or (
+                raw_score >= 98.0
+                and min_dim >= 384
+                and not has_cameraish_meta
+                and not is_graphic_or_logo
+            )
+            or (
+                raw_score >= 95.0
+                and min_dim >= 768
+                and not has_cameraish_meta
+                and not is_graphic_or_logo
+            )
+        )
+
+        score = raw_score if ai_trigger else min(30.0, raw_score * 0.2)
 
         color = (
             RiskLevel.HIGH
@@ -1328,18 +1422,20 @@ async def post_media_risk_bytes(
             else (RiskLevel.MEDIUM if score >= 60 else RiskLevel.LOW)
         )
         reasons = []
-        if score >= 80:
+        if ai_trigger:
             reasons.append("Image appears AI-generated")
 
         scam_alert_data = None
 
         # Check for visual scam cues
         cues = risk_engine._screen_visual_cues(b)
-        if cues.get("visual_scam_any"):
+        cue_strength = float(cues.get("red_ratio", 0.0)) + float(cues.get("orange_ratio", 0.0)) + float(cues.get("yellow_ratio", 0.0))
+        tile_strength = float(cues.get("tile_max_ratio", 0.0))
+        if cues.get("visual_scam_any") and (cue_strength >= 0.24 or tile_strength >= 0.35):
             reasons.append(
                 f"Visual scam patterns detected (R:{cues.get('red_ratio')} O:{cues.get('orange_ratio')})"
             )
-            if color != RiskLevel.HIGH:
+            if color == RiskLevel.LOW and (cue_strength >= 0.35 or tile_strength >= 0.50):
                 color = RiskLevel.MEDIUM
 
         # Check for text scam alerts
@@ -1369,7 +1465,7 @@ async def post_media_risk_bytes(
             image_fake_prob=round(
                 score, 1
             ),  # Return as percentage (score already * 100)
-            scam_alert_data=scam_alert_data,
+            scam_alert=scam_alert_data,
         )
 
         await db.metrics.insert_one(

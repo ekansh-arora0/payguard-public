@@ -494,6 +494,43 @@ async def check_risk_post(payload: dict):
     url = payload.get("url", "")
     fast = payload.get("fast", False)
     follow_redirects_flag = payload.get("follow_redirects", True)
+    overlay_text = payload.get("overlay_text", "")
+    
+    # ========== OVERLAY TEXT SCAM DETECTION ==========
+    # If overlay_text is provided, analyze it for scam patterns first
+    if overlay_text:
+        try:
+            # Import the text scam analyzer
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from backend.risk_engine import RiskScoringEngine
+            
+            engine = RiskScoringEngine(None)
+            scam_result = engine._analyze_text_for_scam(overlay_text)
+            
+            if scam_result and scam_result.get("is_scam"):
+                conf = int(scam_result.get("confidence", 0))
+                return {
+                    "url": url or "overlay://text",
+                    "domain": "overlay_text",
+                    "risk_score": 100,
+                    "risk_level": "HIGH",
+                    "risk_factors": [f"Scam popup detected ({conf}% confidence)"],
+                    "trust_score": max(0, 100 - conf),
+                    "checks_performed": ["overlay_text_analysis"],
+                    "scam_alert": {
+                        "is_scam": True,
+                        "confidence": conf,
+                        "detected_patterns": scam_result.get("detected_patterns", []),
+                        "senior_message": scam_result.get("senior_message", "STOP! This is a SCAM."),
+                        "action_advice": scam_result.get("action_advice", "Close this window immediately.")
+                    },
+                    "response_time_ms": 5
+                }
+        except Exception as e:
+            # Fall through to URL analysis if overlay detection fails
+            pass
     
     # Follow redirects if requested
     original_url = url

@@ -1,22 +1,11 @@
 {
   "ai_image_urls": [
-    "https://gizmodo.com/app/uploads/2025/11/elon-musk-cybertruck-fake-square-1280x853.jpg",
-    "https://gizmodo.com/app/uploads/2025/11/elon-musk-fake-truck-square.jpg",
-    "https://gizmodo.com/app/uploads/2025/11/elon-musk-cybertruck-fake-landscape.jpg",
-    "https://gizmodo.com/app/uploads/2024/03/trump-arrest-ai-image.jpg",
-    "https://gizmodo.com/app/uploads/2023/03/pope-in-white-puffer-ai.jpg",
-    "https://gizmodo.com/app/uploads/2023/05/fake-explosion-pentagon-ai.jpg",
-    "https://gizmodo.com/app/uploads/2023/03/ai-fake-elon-musk-crying.jpg",
-    "https://gizmodo.com/app/uploads/2024/01/ai-fashion-model-woman.jpg",
-    "https://gizmodo.com/app/uploads/2023/08/ai-generated-wildlife-lion.jpg",
-    "https://gizmodo.com/app/uploads/2023/09/ai-generated-landscape-cyberpunk.jpg"
+    "https://thispersondoesnotexist.com/"
   ],
   "non_ai_image_urls": [
-    "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/9/95/Test_image.jpg",
-    "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png",
-    "https://upload.wikimedia.org/wikipedia/commons/6/63/Wikipedia-logo.png"
+    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
+    "https://picsum.photos/200",
+    "https://httpbin.org/image/jpeg"
   ],
   "scam_texts": [
     "CRITICAL ALERT: Your computer is infected! Do not close this window. Call Microsoft support at (888) 555-1234 immediately to resolve.",

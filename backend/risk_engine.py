@@ -97,8 +97,14 @@ class RiskScoringEngine:
         "overstock.com",
         # Major tech / platforms
         "google.com",
+        "googleapis.com",
+        "gstatic.com",
         "apple.com",
         "microsoft.com",
+        "microsoftonline.com",
+        "office.com",
+        "outlook.com",
+        "live.com",
         "github.com",
         "gitlab.com",
         "stackoverflow.com",
@@ -563,6 +569,21 @@ class RiskScoringEngine:
                     trust_score = 0.6 * trust_score + 0.4 * htrust
                 except Exception:
                     pass
+            # Add support for text-based scam analysis in full risk pipeline
+            if content is not None:
+                try:
+                    scam_res = self._analyze_text_for_scam(content)
+                    if scam_res.get("is_scam"):
+                        scam_conf = scam_res.get("confidence", 0)
+                        # Heavy penalty for text-based scam indicators
+                        penalty = (scam_conf / 100.0) * 60.0
+                        trust_score = max(0.0, trust_score - penalty)
+                        risk_factors.append(f"Scam content detected ({scam_conf}% confidence)")
+                        if scam_conf >= 90:
+                            phish_flag = True
+                except Exception:
+                    pass
+
             # trust floor for reputable sites (reduce false positives)
             try:
                 if content is not None:
@@ -1428,6 +1449,7 @@ class RiskScoringEngine:
                 "toll free",
                 "do not close",
                 "contact support",
+                "contact us",
                 "immediate action required",
                 "click allow",
                 "click ok",
@@ -1857,6 +1879,7 @@ class RiskScoringEngine:
                 "toll free",
                 "do not close",
                 "contact support",
+                "contact us",
                 "immediate action required",
                 "click allow",
                 "click ok",
@@ -1893,6 +1916,7 @@ class RiskScoringEngine:
                 "update payment info",
                 "update billing",
                 "billing information",
+                "avoid service suspension",
             ]
             urgency_indicators = [
                 "expires in",
@@ -1986,22 +2010,34 @@ class RiskScoringEngine:
             if scare_hit:
                 confidence_score += 20
                 patterns_found.append("scare_tactics")
-            action_hit = any(p in tl_norm for p in action_phrases)
-            if action_hit:
-                confidence_score += 15
-                patterns_found.append("action_demand")
-            payment_hit = any(p in tl_norm for p in payment_phrases)
-            if payment_hit:
-                confidence_score += 25
-                patterns_found.append("payment_request")
+            
             urgency_hit = any(p in tl_norm for p in urgency_indicators)
             if urgency_hit:
                 confidence_score += 10
                 patterns_found.append("urgency")
+            
             phone_match = phone_pat.search(tl_norm)
             if phone_match:
                 confidence_score += 20
                 patterns_found.append("phone_number")
+
+            action_hit = any(p in tl_norm for p in action_phrases)
+            if action_hit:
+                confidence_score += 15
+                patterns_found.append("action_demand")
+            
+            # Additional check for action verbs with phone numbers or urgent phrases
+            if not action_hit:
+                if any(w in tl_norm for w in ["call", "dial", "contact", "verify", "update", "click"]):
+                    if phone_match or urgency_hit:
+                        action_hit = True
+                        confidence_score += 10
+                        patterns_found.append("action_demand_implied")
+
+            payment_hit = any(p in tl_norm for p in payment_phrases)
+            if payment_hit:
+                confidence_score += 25
+                patterns_found.append("payment_request")
             error_match = error_pat.search(tl_norm)
             if error_match:
                 confidence_score += 15
@@ -2070,6 +2106,15 @@ class RiskScoringEngine:
             if phishing_hit and input_hit:
                 is_scam = True
                 confidence_score = max(confidence_score, 80)
+
+            if urgency_hit and payment_hit and action_hit:
+                is_scam = True
+                confidence_score = max(confidence_score, 85)
+
+            # Rule 6b: Urgency + Payment = SCAM (even without explicit action)
+            if urgency_hit and payment_hit:
+                is_scam = True
+                confidence_score = max(confidence_score, 75)
 
             # Rule 7: Claim prize + Payment = SCAM
             if ("claim" in tl_norm and "prize" in tl_norm) and payment_hit:
@@ -3107,7 +3152,7 @@ class RiskScoringEngine:
                     # Log the command being run
                     logger.debug(f"Running DIRE: {' '.join(cmd)}")
 
-                    out = _sp.run(cmd, stdout=_sp.PIPE, stderr=_sp.PIPE, timeout=20)
+                    out = _sp.run(cmd, stdout=_sp.PIPE, stderr=_sp.PIPE, timeout=45)
                     _os.unlink(tmp_path)
 
                     txt = (out.stdout or b"").decode("utf-8", errors="ignore")
@@ -3212,6 +3257,22 @@ class RiskScoringEngine:
                         p *= 0.5  # Moderate penalty
                 elif mean_edge > 40.0:  # Very noisy/textured (AI often looks like this)
                     p = min(1.0, p * 1.1)
+            except Exception:
+                pass
+
+            # Photo realism guardrail (false-positive reducer)
+            # Many real camera/photos (news/editorial) carry ICC profiles and non-square framing.
+            # DIRE can over-score these as synthetic, so down-weight unless confidence is near-certain.
+            try:
+                info = getattr(img, "info", {}) or {}
+                has_icc = bool(info.get("icc_profile"))
+                ar = float(max(w, h)) / float(max(1, min(w, h)))
+                is_squareish = ar <= 1.12
+
+                if has_icc and (not is_squareish) and p < 0.999:
+                    p *= 0.25
+                elif has_icc and p < 0.95:
+                    p *= 0.5
             except Exception:
                 pass
 

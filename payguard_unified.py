@@ -1427,6 +1427,12 @@ class PayGuard:
         'netflix.com', 'spotify.com', 'stripe.com', 'paypal.com',
         'notion.so', 'figma.com', 'vercel.app', 'netlify.app',
         'stackoverflow.com', 'medium.com', 'substack.com',
+        'discord.com', 'telegram.org', 'whatsapp.com',
+        # Major Banking / Finance (US/Global)
+        'chase.com', 'bankofamerica.com', 'wellsfargo.com', 'citibank.com',
+        'capitalone.com', 'schwab.com', 'fidelity.com', 'vanguard.com',
+        'americanexpress.com', 'amex.com', 'discover.com', 'usbank.com',
+        'pnc.com', 'td.com', 'hsbc.com', 'barclays.com',
         # School / education LMS + SIS software
         # (covers /login/saml, /authenticate, /sso, /oauth paths on these platforms)
         'instructure.com',      # Canvas LMS
@@ -1535,14 +1541,14 @@ class PayGuard:
 
             spam_prob = result.get('spam_prob', 0.0)
             logger.debug(f"BERT raw score: spam_prob={spam_prob:.3f}")
-            if spam_prob < 0.96:
+            if spam_prob < 0.94:
                 return None
 
             # Structural context gate — require at least one hard indicator
             tl = cleaned.lower()
             has_suspicious_url = self._has_suspicious_url_in_text(cleaned)
             has_phone = bool(re.search(
-                r'(?:call|dial|contact)[^0-9]{0,25}[\+\(]?\d[\d\s\-\(\)]{7,}',
+                r'(?:call|dial|contact|support|help)[^0-9]{0,25}[\+\(]?\d[\d\s\-\(\)]{7,}',
                 cleaned, re.I
             ))
             # Credential gate: ONLY truly phishing-specific phrases.
@@ -1550,9 +1556,10 @@ class PayGuard:
             # 'routing number', 'pin number' — those appear on every legitimate login /
             # checkout page and are the primary source of false positives against login screens.
             has_credential_request = any(w in tl for w in [
-                'social security', 'ssn', 'cvv',
+                'social security', 'ssn', 'cvv', 'pin code',
                 'verify your', 'confirm your identity', 'update your payment',
-                'enter your card', 'billing information',
+                'enter your card', 'billing information', 'unauthorized access',
+                'suspicious activity', 'identity theft',
             ])
 
             gate2_reason = (
