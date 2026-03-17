@@ -6,8 +6,8 @@
     "errors": 0,
     "skipped": 0,
     "success_rate": 42.10526315789473,
-    "total_duration": 0.039956092834472656,
-    "average_duration": 0.0008343646400853208
+    "total_duration": 0.07169485092163086,
+    "average_duration": 0.0009840287660297594
   },
   "config": {
     "backend_url": "http://localhost:8002",
@@ -21,8 +21,8 @@
       "test_name": "Backend Health Check",
       "status": "TestStatus.PASS",
       "details": "Status: healthy, Uptime: 2h",
-      "duration": 2.1457672119140625e-06,
-      "timestamp": "2026-02-12T17:34:05.685275",
+      "duration": 1.1920928955078125e-06,
+      "timestamp": "2026-03-16T20:40:39.308273",
       "error_details": null,
       "metadata": {
         "health_data": {
@@ -35,8 +35,8 @@
       "test_name": "API Endpoint /api/health",
       "status": "TestStatus.PASS",
       "details": "Health endpoint - HTTP 200",
-      "duration": 1.9073486328125e-06,
-      "timestamp": "2026-02-12T17:34:05.685319",
+      "duration": 9.5367431640625e-07,
+      "timestamp": "2026-03-16T20:40:39.308312",
       "error_details": null,
       "metadata": {
         "endpoint": "/api/health",
@@ -49,7 +49,7 @@
       "status": "TestStatus.PASS",
       "details": "Statistics endpoint - HTTP 200",
       "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.685328",
+      "timestamp": "2026-03-16T20:40:39.308320",
       "error_details": null,
       "metadata": {
         "endpoint": "/api/stats",
@@ -62,7 +62,7 @@
       "status": "TestStatus.PASS",
       "details": "Merchants endpoint - HTTP 200",
       "duration": 9.5367431640625e-07,
-      "timestamp": "2026-02-12T17:34:05.685335",
+      "timestamp": "2026-03-16T20:40:39.308327",
       "error_details": null,
       "metadata": {
         "endpoint": "/api/merchants",
@@ -75,7 +75,7 @@
       "status": "TestStatus.PASS",
       "details": "Fraud reports endpoint - HTTP 200",
       "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.685340",
+      "timestamp": "2026-03-16T20:40:39.308334",
       "error_details": null,
       "metadata": {
         "endpoint": "/api/fraud-reports",
@@ -88,7 +88,7 @@
       "status": "TestStatus.PASS",
       "details": "Root API endpoint - HTTP 200",
       "duration": 1.1920928955078125e-06,
-      "timestamp": "2026-02-12T17:34:05.685346",
+      "timestamp": "2026-03-16T20:40:39.308340",
       "error_details": null,
       "metadata": {
         "endpoint": "/api/",
@@ -101,7 +101,7 @@
       "status": "TestStatus.FAIL",
       "details": "Should be safe - Risk: unknown, Trust: 0",
       "duration": 9.5367431640625e-07,
-      "timestamp": "2026-02-12T17:34:05.685428",
+      "timestamp": "2026-03-16T20:40:39.308408",
       "error_details": null,
       "metadata": {
         "url": "https://microsoft.com",
@@ -114,8 +114,8 @@
       "test_name": "URL Risk Analysis: https://micr0soft-security.xyz...",
       "status": "TestStatus.FAIL",
       "details": "Typosquatting domain - Risk: unknown, Trust: 0",
-      "duration": 1.1920928955078125e-06,
-      "timestamp": "2026-02-12T17:34:05.685437",
+      "duration": 0.0,
+      "timestamp": "2026-03-16T20:40:39.308417",
       "error_details": null,
       "metadata": {
         "url": "https://micr0soft-security.xyz",
@@ -128,8 +128,8 @@
       "test_name": "URL Risk Analysis: https://paypal-verify.suspicious-domain.com...",
       "status": "TestStatus.FAIL",
       "details": "Phishing domain - Risk: unknown, Trust: 0",
-      "duration": 1.1920928955078125e-06,
-      "timestamp": "2026-02-12T17:34:05.685443",
+      "duration": 0.0,
+      "timestamp": "2026-03-16T20:40:39.308425",
       "error_details": null,
       "metadata": {
         "url": "https://paypal-verify.suspicious-domain.com",
@@ -143,7 +143,7 @@
       "status": "TestStatus.FAIL",
       "details": "Should be safe - Risk: unknown, Trust: 0",
       "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.685449",
+      "timestamp": "2026-03-16T20:40:39.308432",
       "error_details": null,
       "metadata": {
         "url": "https://google.com",
@@ -156,8 +156,8 @@
       "test_name": "URL Risk Analysis: javascript:alert('xss')...",
       "status": "TestStatus.FAIL",
       "details": "XSS attempt - Risk: unknown, Trust: 0",
-      "duration": 9.5367431640625e-07,
-      "timestamp": "2026-02-12T17:34:05.685455",
+      "duration": 0.0,
+      "timestamp": "2026-03-16T20:40:39.308439",
       "error_details": null,
       "metadata": {
         "url": "javascript:alert('xss')",
@@ -171,7 +171,7 @@
       "status": "TestStatus.FAIL",
       "details": "Data URL XSS - Risk: unknown, Trust: 0",
       "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.685461",
+      "timestamp": "2026-03-16T20:40:39.308447",
       "error_details": null,
       "metadata": {
         "url": "data:text/html,<script>alert('xss')</script>",
@@ -184,8 +184,8 @@
       "test_name": "AI Image Detection",
       "status": "TestStatus.PASS",
       "details": "Score: 0, Color: unknown, Reasons: 0",
-      "duration": 0.015758991241455078,
-      "timestamp": "2026-02-12T17:34:05.701264",
+      "duration": 0.018600940704345703,
+      "timestamp": "2026-03-16T20:40:39.327097",
       "error_details": null,
       "metadata": {
         "media_score": 0,
@@ -198,8 +198,8 @@
       "test_name": "Scam Pattern: Tech Support Scam",
       "status": "TestStatus.FAIL",
       "details": "Scam: False, Confidence: 0%, Patterns: 0",
-      "duration": 1.9073486328125e-06,
-      "timestamp": "2026-02-12T17:34:05.701321",
+      "duration": 2.1457672119140625e-06,
+      "timestamp": "2026-03-16T20:40:39.327198",
       "error_details": null,
       "metadata": {
         "is_scam": false,
@@ -217,8 +217,8 @@
       "test_name": "Scam Pattern: Phishing Email",
       "status": "TestStatus.FAIL",
       "details": "Scam: False, Confidence: 0%, Patterns: 0",
-      "duration": 1.1920928955078125e-06,
-      "timestamp": "2026-02-12T17:34:05.701330",
+      "duration": 9.5367431640625e-07,
+      "timestamp": "2026-03-16T20:40:39.327212",
       "error_details": null,
       "metadata": {
         "is_scam": false,
@@ -235,8 +235,8 @@
       "test_name": "Scam Pattern: SMS Scam",
       "status": "TestStatus.FAIL",
       "details": "Scam: False, Confidence: 0%, Patterns: 0",
-      "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.701337",
+      "duration": 9.5367431640625e-07,
+      "timestamp": "2026-03-16T20:40:39.327221",
       "error_details": null,
       "metadata": {
         "is_scam": false,
@@ -254,7 +254,7 @@
       "status": "TestStatus.FAIL",
       "details": "Scam: False, Confidence: 0%, Patterns: 0",
       "duration": 1.1920928955078125e-06,
-      "timestamp": "2026-02-12T17:34:05.701344",
+      "timestamp": "2026-03-16T20:40:39.327229",
       "error_details": null,
       "metadata": {
         "is_scam": false,
@@ -270,14 +270,14 @@
     {
       "test_name": "Performance Benchmark",
       "status": "TestStatus.PASS",
-      "details": "RPS: 252668.92, Success: 100.0%",
-      "duration": 7.915496826171875e-05,
-      "timestamp": "2026-02-12T17:34:05.701468",
+      "details": "RPS: 234975.01, Success: 100.0%",
+      "duration": 8.511543273925781e-05,
+      "timestamp": "2026-03-16T20:40:39.327363",
       "error_details": null,
       "metadata": {
         "concurrent_requests": 20,
         "successful_requests": 20,
-        "requests_per_second": 252668.9156626506,
+        "requests_per_second": 234975.01400560225,
         "success_rate": 1.0
       }
     },
@@ -286,10 +286,10 @@
       "status": "TestStatus.FAIL",
       "details": "Agent not detected",
       "duration": 0.0,
-      "timestamp": "2026-02-12T17:34:05.724902",
+      "timestamp": "2026-03-16T20:40:39.379889",
       "error_details": null,
       "metadata": {}
     }
   ],
-  "timestamp": "2026-02-12T17:34:05.725448"
+  "timestamp": "2026-03-16T20:40:39.380152"
 }

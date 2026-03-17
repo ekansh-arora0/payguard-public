@@ -130,7 +130,7 @@ class TestPerformanceMonitor:
             monitor.record_screen_capture_time(i * 0.1)
         
         assert len(monitor.screen_capture_times) == 5  # max_samples
-        assert monitor.screen_capture_times == [0.5, 0.6, 0.7, 0.8, 0.9]  # Last 5
+        assert monitor.screen_capture_times == pytest.approx([0.5, 0.6, 0.7, 0.8, 0.9])  # Last 5
     
     def test_get_stats_empty(self, monitor):
         """Test stats with no data"""
@@ -152,9 +152,9 @@ class TestPerformanceMonitor:
         
         stats = monitor.get_stats()
         
-        assert stats["screen_capture"]["avg"] == 0.2
-        assert stats["screen_capture"]["min"] == 0.1
-        assert stats["screen_capture"]["max"] == 0.3
+        assert stats["screen_capture"]["avg"] == pytest.approx(0.2)
+        assert stats["screen_capture"]["min"] == pytest.approx(0.1)
+        assert stats["screen_capture"]["max"] == pytest.approx(0.3)
     
     def test_thread_safety(self, monitor):
         """Test thread safety of performance monitor"""

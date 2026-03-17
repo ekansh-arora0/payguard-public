@@ -362,7 +362,7 @@ class NotificationManager:
     
     def _sanitize_text(self, text: str) -> str:
         """Sanitize text for shell commands"""
-        return text.replace('"', '\\"').replace('\\', '\\\\')
+        return text.replace('\\', '\\\\').replace('"', '\\"')
     
     def _send_critical_notification(self, title: str, message: str):
         """Send critical notification with sound and dialog"""
@@ -423,9 +423,13 @@ class PayGuardMenuBarOptimized:
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or self._default_config()
+        defaults = self._default_config()
+        if config:
+            defaults.update(config)
+        self.config = defaults
         self.running = True
         self.scam_count = 0
+        self.last_clipboard_content = ""
         
         # Initialize components
         self.detector = ScamDetector()
@@ -444,6 +448,9 @@ class PayGuardMenuBarOptimized:
         """Default configuration"""
         return {
             "alert_cooldown": 10,
+            "screen_check_interval": 4,
+            "clipboard_check_interval": 2,
+            "status_update_interval": 30,
             "max_image_size": (1920, 1080),
             "enable_performance_monitoring": True,
             "log_level": "INFO"
@@ -561,6 +568,51 @@ class PayGuardMenuBarOptimized:
             
         except Exception as e:
             logger.error(f"Text analysis error: {e}")
+            return DetectionResult(is_scam=False)
+    
+    def check_clipboard(self) -> DetectionResult:
+        """
+        Check clipboard for scam content - USER-INITIATED ONLY
+        
+        Reads the current clipboard text via pbpaste and analyzes it.
+        Skips analysis if the content hasn't changed since last check.
+        
+        Returns:
+            DetectionResult: Detection result
+        """
+        start_time = time.time()
+        
+        try:
+            result = subprocess.run(
+                ["pbpaste"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode != 0:
+                return DetectionResult(is_scam=False)
+            
+            content = result.stdout
+            
+            # Skip if content hasn't changed
+            if content == self.last_clipboard_content:
+                return DetectionResult(is_scam=False)
+            
+            self.last_clipboard_content = content
+            
+            # Analyze the clipboard text
+            detection_result = self.detector.analyze_text(content)
+            
+            # Record performance
+            if self.config["enable_performance_monitoring"]:
+                duration = time.time() - start_time
+                self.performance_monitor.record_clipboard_time(duration)
+            
+            return detection_result
+            
+        except Exception as e:
+            logger.error(f"Clipboard check error: {e}")
             return DetectionResult(is_scam=False)
     
     def scan_screen_now(self) -> DetectionResult:
