@@ -52,3 +52,9 @@ The agent needs to run on your local machine to capture your screen and clipboar
 ## 🛠️ Troubleshooting
 - **Port Conflict**: If port `8002` or `27017` is already in use, you can change them in `docker-compose.yml`.
 - **Memory**: The AI model requires at least 2GB of RAM allocated to Docker.
+
+## 🔐 Production Security Notes
+- Set `PAYGUARD_ALLOW_DEMO_KEY=false` in `.env` (default in `.env.example`).
+- Set a strong `PAYGUARD_API_ADMIN_TOKEN` in `.env`.
+- API key issuance endpoint `/api/v1/api-key/generate` now requires `X-Admin-Token`.
+- Do not expose MongoDB/Redis ports publicly in production.

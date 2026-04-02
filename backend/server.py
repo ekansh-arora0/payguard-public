@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.cors import CORSMiddleware
 
-from .auth import APIKeyManager, get_api_key, require_api_key
+from .auth import APIKeyManager, get_api_key, require_admin_token, require_api_key
 from .models import (APIKeyCreate, ContentRiskRequest, CustomRule,
                      CustomRuleCreate, FraudReport, FraudReportCreate,
                      LabelFeedback, LabelFeedbackCreate, MediaRisk, Merchant,
@@ -209,8 +210,23 @@ async def track_requests(request: Request, call_next):
     if _shutdown_event:
         return Response("Service is shutting down", status_code=503)
     _active_requests += 1
+    t0 = time.time()
     try:
         response = await call_next(request)
+
+        path = request.url.path
+        duration = time.time() - t0
+
+        # /risk and /risk/content already record richer metrics in their handlers.
+        if path.startswith("/api/v1") and path not in {"/api/v1/risk", "/api/v1/risk/content"}:
+            _record_request(path, response.status_code, duration)
+
+        # Security telemetry for auth/rate-limit events.
+        if path.startswith("/api/v1") and response.status_code in {401, 403, 429}:
+            client_ip = request.client.host if request.client and request.client.host else "unknown"
+            event_type = "auth_failure" if response.status_code in {401, 403} else "rate_limited"
+            _record_security_event(client_ip, event_type, path)
+
         return response
     finally:
         _active_requests -= 1
@@ -828,6 +844,8 @@ async def check_risk(
 
     except Exception as e:
         _record_request("/risk", 500, time.time() - t0)
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Error checking risk: {str(e)}")
         import traceback
 
@@ -836,9 +854,13 @@ async def check_risk(
 
 
 @api_router.get("/risk", response_model=RiskScore)
-async def get_risk_by_url(url: str, api_key: str = Depends(require_api_key)):
+@limiter.limit("60/minute")
+async def get_risk_by_url(
+    request: Request, url: str, api_key: str = Depends(require_api_key)
+):
     """Get risk score for a URL (GET method for browser extensions)"""
     try:
+        _ = request
         t0 = time.time()
         await api_key_manager.validate_api_key(api_key)
 
@@ -883,6 +905,8 @@ async def get_risk_by_url(url: str, api_key: str = Depends(require_api_key)):
         return risk_score
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Error getting risk: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get risk score")
 
@@ -1123,14 +1147,21 @@ async def get_custom_rules(api_key: str = Depends(get_api_key)):
 
 
 @api_router.post("/api-key/generate")
-async def generate_api_key(request: APIKeyCreate):
+@limiter.limit("10/minute")
+async def generate_api_key(
+    request: Request,
+    body: APIKeyCreate,
+    admin_token: str = Depends(require_admin_token),
+):
     """Generate new API key for institutions"""
     try:
+        _ = request
+        _ = admin_token
         result = await api_key_manager.generate_api_key(
-            institution_name=request.institution_name, tier=request.tier
+            institution_name=body.institution_name, tier=body.tier
         )
 
-        logger.info(f"API key generated for: {request.institution_name}")
+        logger.info(f"API key generated for: {body.institution_name}")
 
         return result
 
@@ -1715,17 +1746,21 @@ async def submit_label_feedback(
 
 
 @api_router.post("/risk/content", response_model=RiskScore)
+@limiter.limit("20/minute")
 async def check_risk_with_content(
-    request: ContentRiskRequest, api_key: str = Depends(require_api_key)
+    request: Request,
+    body: ContentRiskRequest,
+    api_key: str = Depends(require_api_key),
 ):
     """Check risk with explicit HTML content (for browser extension with page source)"""
     t0 = time.time()
     try:
+        _ = request
         await api_key_manager.validate_api_key(api_key)
         # short-term cache to stabilize scores for dynamic pages
         recent_check = await db.risk_checks.find_one(
             {
-                "url": request.url,
+                "url": body.url,
                 "checked_at": {
                     "$gte": datetime.now(timezone.utc) - timedelta(minutes=10)
                 },
@@ -1734,20 +1769,20 @@ async def check_risk_with_content(
         )
         if recent_check:
             return RiskScore(**recent_check)
-        html = request.html
-        if html is None and request.url:
+        html = body.html
+        if html is None and body.url:
             async with httpx.AsyncClient(timeout=5.0) as http_client:
                 resp = await http_client.get(
-                    request.url, headers={"User-Agent": "PayGuard/1.0"}
+                    body.url, headers={"User-Agent": "PayGuard/1.0"}
                 )
                 resp.raise_for_status()
                 html = resp.text[:100000]
-        risk_score = await risk_engine.calculate_risk(request.url, content=html)
+        risk_score = await risk_engine.calculate_risk(body.url, content=html)
         await db.risk_checks.insert_one(risk_score.model_dump())
         await db.metrics.insert_one(
             {
                 "endpoint": "POST /api/risk/content",
-                "url": request.url,
+                "url": body.url,
                 "trust_score": risk_score.trust_score,
                 "risk_level": risk_score.risk_level.value,
                 "latency_ms": int((time.time() - t0) * 1000),
@@ -1782,13 +1817,14 @@ app.include_router(api_router)
 import threading
 # ============ Prometheus Metrics ============
 # Lightweight in-memory metrics (no prometheus_client dependency)
-from collections import defaultdict
 
 _metrics_lock = threading.Lock()
 _request_counts = defaultdict(lambda: defaultdict(int))
 _request_duration_buckets = defaultdict(lambda: defaultdict(list))
 _risk_level_counts = defaultdict(int)
 _model_loaded = {"xgboost": False, "cnn": False}
+_security_event_counts = defaultdict(int)
+_ip_security_events = defaultdict(list)
 
 
 @app.get("/api/v1/metrics", include_in_schema=False)
@@ -1811,6 +1847,14 @@ async def metrics():
         lines.append("# TYPE payguard_risk_checks_total counter")
         for level, count in _risk_level_counts.items():
             lines.append(f'payguard_risk_checks_total{{risk_level="{level}"}} {count}')
+
+        # Security event counters (auth failures, throttling)
+        lines.append("# HELP payguard_security_events_total Security events")
+        lines.append("# TYPE payguard_security_events_total counter")
+        for event, count in _security_event_counts.items():
+            lines.append(
+                f'payguard_security_events_total{{event="{event}"}} {count}'
+            )
 
         # Model health
         lines.append("# HELP payguard_model_loaded Model loaded status")
@@ -1869,6 +1913,30 @@ def _record_request(
         _request_counts[endpoint][str(status)] += 1
         if risk_level:
             _risk_level_counts[risk_level] += 1
+
+
+def _record_security_event(client_ip: str, event_type: str, path: str):
+    """Record auth/rate-limit events and log bursts as anomalies."""
+    now = time.time()
+    with _metrics_lock:
+        _security_event_counts[event_type] += 1
+
+        events = _ip_security_events[client_ip]
+        events.append(now)
+
+        # Keep only a 10-minute sliding window
+        _ip_security_events[client_ip] = [ts for ts in events if now - ts <= 600]
+        burst = len(_ip_security_events[client_ip])
+
+        # Log repeated abuse patterns for external alerting
+        if burst >= 20 and burst % 5 == 0:
+            logger.warning(
+                "Potential abuse detected: ip=%s event=%s path=%s events_10m=%s",
+                client_ip,
+                event_type,
+                path,
+                burst,
+            )
 
 
 # Update model status on startup

@@ -92,6 +92,8 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://yourdomain.com}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_FORMAT=${LOG_FORMAT:-json}
+      - PAYGUARD_ALLOW_DEMO_KEY=${PAYGUARD_ALLOW_DEMO_KEY:-false}
+      - PAYGUARD_API_ADMIN_TOKEN=${PAYGUARD_API_ADMIN_TOKEN:?Set PAYGUARD_API_ADMIN_TOKEN in .env}
     depends_on:
       mongodb:
         condition: service_healthy

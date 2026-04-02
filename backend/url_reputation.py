@@ -265,9 +265,13 @@ class OpenPhishFeed(ThreatFeed):
         # Also check domain
         domain = self._extract_domain(url)
         if domain and self._bloom.contains(domain):
-            # Check if any URL with this domain is in the set
+            # Check exact domain / subdomain match only (avoid substring false positives
+            # like "goodexample.com" matching "badexample.com").
             for known_url in self._urls:
-                if domain in known_url:
+                known_domain = self._extract_domain(known_url)
+                if not known_domain:
+                    continue
+                if domain == known_domain or domain.endswith('.' + known_domain):
                     return ThreatType.PHISHING
 
         return None
@@ -464,22 +468,8 @@ class DomainAgeChecker:
             if datetime.now(timezone.utc) - cached_at < self._cache_ttl:
                 return age
 
-        try:
-            import whois
-
-            w = whois.whois(domain)
-
-            creation_date = w.creation_date
-            if isinstance(creation_date, list):
-                creation_date = creation_date[0]
-
-            if creation_date:
-                age_days = (datetime.now(timezone.utc) - creation_date).days
-                self._cache[domain] = (age_days, datetime.now(timezone.utc))
-                return age_days
-
-        except Exception as e:
-            logger.debug(f"WHOIS lookup failed for {domain}: {e}")
+        # WHOIS disabled for speed — domain tier + page signals catch the same patterns
+        return None
 
         self._cache[domain] = (None, datetime.now(timezone.utc))
         return None

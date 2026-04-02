@@ -13,6 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+admin_token_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
 
 # Per-minute rate limits by tier
 _MINUTE_LIMITS: Dict[str, int] = {
@@ -128,7 +129,15 @@ class APIKeyManager:
 
         # Allow demo key for testing
         if api_key == "demo_key":
-            return {"tier": "free", "is_active": True}
+            allow_demo = os.environ.get("PAYGUARD_ALLOW_DEMO_KEY", "false").lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            if allow_demo:
+                return {"tier": "free", "is_active": True}
+            raise HTTPException(status_code=401, detail="Invalid API key")
 
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
@@ -191,3 +200,20 @@ async def require_api_key(api_key: str = Security(api_key_header)):
             headers={"WWW-Authenticate": "ApiKey"},
         )
     return api_key
+
+
+async def require_admin_token(admin_token: str = Security(admin_token_header)):
+    """Dependency that requires a valid admin token for privileged endpoints."""
+    expected = os.environ.get("PAYGUARD_API_ADMIN_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin token is not configured",
+        )
+    if not admin_token or not secrets.compare_digest(admin_token, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin token",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    return admin_token

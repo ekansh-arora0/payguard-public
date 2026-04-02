@@ -154,7 +154,7 @@ class RiskScoringEngine:
 
     # Suspicious patterns
     SUSPICIOUS_PATTERNS = [
-        # Account-related scams
+        # Account-related scams — compound patterns only (not single-word paths)
         r"verify-?account",
         r"secure-?login",
         r"update-?payment",
@@ -191,15 +191,9 @@ class RiskScoringEngine:
         r"prize-?claim",
         r"winner",
         r"lottery",
-        # Common scam paths
-        r"/login",
-        r"/signin",
-        r"/verify",
-        r"/account",
-        r"/secure",
-        r"/update",
-        r"/confirm",
-        r"/auth",
+        # Removed bare path patterns (/login, /oauth, /account etc.) — too many FPs on
+        # legitimate OAuth, SSO, and settings URLs. These are caught by brand-impersonation
+        # detection and XGBoost instead.
     ]
     # External reputation cache
     openphish_urls: set = set()
@@ -214,58 +208,96 @@ class RiskScoringEngine:
         self.html_scaler = None
         try:
             mp_dir = Path(__file__).parent.parent / "models"
+            # Try v2 model first (domain-focused features, trained on 70K URLs)
+            v2_path = mp_dir / "url_xgboost_v2.model"
             json_path = mp_dir / "best_excel_xgb.json"
             ubj_path = mp_dir / "best_excel_xgb.ubj"
             scaler_path = mp_dir / "best_excel_xgb_scaler.pkl"
-            if _xgb is not None and (json_path.exists() or ubj_path.exists()):
+            p = mp_dir / "best_excel_xgb.pkl"
+            loaded = False
+
+            # Prefer v2 model (better features)
+            if _xgb is not None and v2_path.exists():
                 try:
                     booster = _xgb.Booster()
-                    booster.load_model(
-                        str(json_path if json_path.exists() else ubj_path)
-                    )
+                    booster.load_model(str(v2_path))
                     self.ml_model = booster
-                    if scaler_path.exists():
-                        self.ml_scaler = joblib.load(scaler_path)
-                    else:
-                        self.ml_scaler = None
-                    self.shap_explainer = None
-                except Exception:
-                    self.ml_model = None
-                    self.ml_scaler = None
-                    self.shap_explainer = None
-            else:
-                p = mp_dir / "best_excel_xgb.pkl"
-                obj = joblib.load(p)
-                model = obj.get("model")
-                scaler = obj.get("scaler")
-                self.ml_model = model
-                self.ml_scaler = scaler
-                try:
-                    import shap
+                    loaded = True
+                    logger.info("Loaded v2 URL ML model (domain-focused features)")
+                except Exception as e:
+                    logger.warning(f"V2 model load failed: {e}")
 
-                    self.shap_explainer = shap.TreeExplainer(self.ml_model)
-                except Exception:
-                    self.shap_explainer = None
+            # Prefer native booster when available, but fall back to pickle model
+            # if JSON/UBJ loading fails.
+            if not loaded and _xgb is not None and (json_path.exists() or ubj_path.exists()):
+                model_path = json_path if json_path.exists() else ubj_path
                 try:
-                    if _xgb is not None:
-                        booster = None
-                        if hasattr(model, "get_booster"):
-                            booster = model.get_booster()
-                        elif isinstance(model, _xgb.Booster):
-                            booster = model
-                        if booster is not None:
-                            out_json = mp_dir / "best_excel_xgb.json"
-                            try:
-                                booster.save_model(str(out_json))
-                            except Exception:
-                                pass
-                            try:
-                                if scaler is not None:
-                                    joblib.dump(scaler, scaler_path)
-                            except Exception:
-                                pass
+                    booster = _xgb.Booster()
+                    booster.load_model(str(model_path))
+                    self.ml_model = booster
+                    loaded = True
+                except Exception as e:
+                    logger.warning(
+                        f"XGBoost booster load failed ({model_path.name}): {e}. Falling back to pickle model."
+                    )
+
+            if not loaded and p.exists():
+                try:
+                    obj = joblib.load(p)
+                    if isinstance(obj, dict):
+                        model = obj.get("model")
+                        scaler = obj.get("scaler")
+                    else:
+                        model = obj
+                        scaler = None
+
+                    if model is not None:
+                        self.ml_model = model
+                        self.ml_scaler = scaler
+                        loaded = True
+
+                        try:
+                            import shap
+
+                            self.shap_explainer = shap.TreeExplainer(self.ml_model)
+                        except Exception:
+                            self.shap_explainer = None
+
+                        # Best-effort export of booster/scaler for faster next startup.
+                        try:
+                            if _xgb is not None:
+                                booster = None
+                                if hasattr(model, "get_booster"):
+                                    booster = model.get_booster()
+                                elif isinstance(model, _xgb.Booster):
+                                    booster = model
+                                if booster is not None:
+                                    out_json = mp_dir / "best_excel_xgb.json"
+                                    try:
+                                        booster.save_model(str(out_json))
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if scaler is not None:
+                                            joblib.dump(scaler, scaler_path)
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.warning(f"Pickle XGBoost load failed ({p.name}): {e}")
+
+            if loaded and self.ml_scaler is None and scaler_path.exists():
+                try:
+                    self.ml_scaler = joblib.load(scaler_path)
                 except Exception:
-                    pass
+                    self.ml_scaler = None
+
+            if not loaded:
+                self.ml_model = None
+                self.ml_scaler = None
+                self.shap_explainer = None
+                logger.warning("URL ML model unavailable: no usable XGBoost model could be loaded")
         except Exception:
             self.ml_model = None
             self.ml_scaler = None
@@ -2332,35 +2364,8 @@ class RiskScoringEngine:
             return False
 
     async def _check_domain_age(self, domain: str) -> Optional[int]:
-        """Check domain age using WHOIS with fallback for trusted domains"""
-        try:
-            import whois
-
-            w = await self._run_blocking(lambda: whois.whois(domain))
-            created = w.creation_date
-            if isinstance(created, list):
-                created = created[0]
-            if not created:
-                return None
-            if isinstance(created, datetime):
-                delta = datetime.now(timezone.utc) - created
-            else:
-                # attempt to parse string
-                try:
-                    from dateutil import parser
-
-                    dt = parser.parse(str(created))
-                    delta = datetime.now(timezone.utc) - dt
-                except Exception:
-                    return None
-            return max(0, delta.days)
-        except Exception as e:
-            logger.debug(f"WHOIS lookup failed for {domain}: {e}")
-            # Fallback: return conservative estimate for trusted domains
-            if self._is_trusted_domain(domain):
-                logger.debug(f"Using fallback age for trusted domain: {domain}")
-                return 1825  # ~5 years for trusted domains
-            return None
+        """WHOIS disabled for speed — domain tier + page signals catch the same patterns"""
+        return None
 
     def _detect_payment_gateways(self, url: str, domain: str) -> List[PaymentGateway]:
         """Detect payment gateways conservatively using host only"""
@@ -2391,14 +2396,37 @@ class RiskScoringEngine:
                 return True
         return False
 
+    # Trusted apex domains where path patterns must NEVER fire (would cause false positives
+    # on legitimate sites like secure-media.collegeboard.org/apc/ or bank.com/update).
+    _TRUSTED_PATTERNS_DOMAINS = {
+        'collegeboard.org', 'khanacademy.org', 'coursera.org', 'edx.org', 'udemy.com',
+        'pearson.com', 'clever.com', 'jclever.com', 'classkick.com', 'quizlet.com', 'powerschool.com',
+        'amazon.com', 'paypal.com', 'apple.com', 'microsoft.com', 'google.com',
+        'chase.com', 'bankofamerica.com', 'wellsfargo.com', 'capitalone.com',
+        'github.com', 'linkedin.com', 'facebook.com', 'netflix.com', 'dropbox.com',
+        'zoom.us', 'slack.com', 'notion.so', 'figma.com', 'heroku.com',
+    }
+
+    def _is_trusted_patterns_domain(self, domain: str) -> bool:
+        """Return True if domain is known-good and its URL paths should never
+        trigger /login /secure /verify etc. pattern matches."""
+        d = domain.lower().lstrip('www.')
+        for apex in self._TRUSTED_PATTERNS_DOMAINS:
+            if d == apex or d.endswith('.' + apex):
+                return True
+        return False
+
     def _has_suspicious_patterns(self, url: str, domain: Optional[str] = None) -> bool:
         """Check for suspicious patterns in URL"""
+        # Skip pattern check for known-good domains whose URLs legitimately contain
+        # /login /secure /verify /account etc. (e.g. secure-media.collegeboard.org).
+        if domain and self._is_trusted_patterns_domain(domain):
+            return False
         url_lower = url.lower()
         if any(re.search(pattern, url_lower) for pattern in self.SUSPICIOUS_PATTERNS):
             return True
         if domain:
             d = domain.lower()
-            # generic indicator: presence of 'com.' within subdomains (e.g., brand.com.phish.tld)
             labels = d.split(".")
             if len(labels) >= 3 and "com" in labels[:-2]:
                 return True
@@ -2540,9 +2568,9 @@ class RiskScoringEngine:
 
     def _url_features(self, url: str) -> np.ndarray:
         """Extract URL features for ML model prediction.
-        Returns 36 features when enhanced model is loaded, 12 for legacy."""
+        Returns 25 features for v2 model (domain-focused), 36 for enhanced, 12 for legacy."""
         u = url.lower().strip()
-        # Check if we have the enhanced model (36 features) or legacy (12)
+        # Check model feature count
         try:
             n_features = (
                 self.ml_model.num_features()
@@ -2551,6 +2579,135 @@ class RiskScoringEngine:
             )
         except Exception:
             n_features = 12
+
+        # V2 model: 25 domain-focused features
+        if n_features == 25:
+            import math as _math
+
+            url_lower = u if u.startswith(('http://', 'https://')) else 'https://' + u
+            try:
+                from urllib.parse import urlparse as _urlparse2
+                _parsed = _urlparse2(url_lower)
+                hostname = (_parsed.hostname or '').lower()
+                path = _parsed.path or ''
+                query = _parsed.query or ''
+            except Exception:
+                hostname = u.split('/')[0] if '/' in u else u
+                path = ''
+                query = ''
+
+            if hostname.startswith('www.'):
+                hostname = hostname[4:]
+
+            labels = hostname.split('.') if '.' in hostname else [hostname]
+            sld = labels[-2] if len(labels) >= 2 else hostname
+            tld = labels[-1] if labels else ''
+            sld_flat = re.sub(r'[-_.]+', '', sld)
+
+            # Normalize for brand comparison
+            _homo = {'\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p',
+                     '\u0441': 'c', '\u0443': 'y', '\u0445': 'x', '\u0456': 'i'}
+            _subs = {'0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '8': 'b'}
+            sld_norm = sld_flat.lower().translate(str.maketrans(_homo))
+            sld_norm = sld_norm.translate(str.maketrans(_subs))
+
+            # Import brand lists from training module
+            try:
+                from train_url_model import BRAND_KEYWORDS as _BK, BRAND_DOMAINS as _BD, levenshtein as _lev
+            except Exception:
+                _BK = {'paypal', 'amazon', 'microsoft', 'google', 'apple', 'facebook', 'netflix',
+                       'chase', 'wellsfargo', 'bankofamerica', 'citibank', 'stripe', 'coinbase'}
+                _BD = {'paypal.com', 'amazon.com', 'microsoft.com', 'google.com', 'apple.com',
+                       'chase.com', 'bankofamerica.com', 'wellsfargo.com'}
+                _lev = lambda a, b: abs(len(a) - len(b))
+
+            _SUSP_TLDS = {'top', 'xyz', 'tk', 'ml', 'ga', 'cf', 'gq', 'site', 'online',
+                         'store', 'shop', 'click', 'link', 'buzz', 'monster', 'icu', 'cfd', 'sbs'}
+
+            brand_in_domain = 0
+            brand_similarity = 0.0
+            for brand in _BK:
+                if brand in sld_norm:
+                    is_real = any(hostname == rd or hostname.endswith('.' + rd) for rd in _BD)
+                    if not is_real:
+                        brand_in_domain = 1
+                        break
+            for rd in _BD:
+                rb = rd.split('.')[0]
+                if len(rb) < 4:
+                    continue
+                if sld_norm == rb or sld_norm.startswith(rb) or sld_norm.endswith(rb):
+                    is_real = hostname == rd or hostname.endswith('.' + rd)
+                    if not is_real:
+                        brand_similarity = max(brand_similarity, 0.95)
+                host_flat = re.sub(r'[-_.]+', '', hostname.lower())
+                if rb in host_flat and host_flat != rb:
+                    is_real = hostname == rd or hostname.endswith('.' + rd)
+                    if not is_real:
+                        brand_similarity = max(brand_similarity, 0.85)
+                if len(sld_norm) >= 5:
+                    for start in range(max(0, len(sld_norm) - len(rb) - 1)):
+                        end = min(start + len(rb) + 2, len(sld_norm) + 1)
+                        chunk = sld_norm[start:end]
+                        if abs(len(chunk) - len(rb)) > 2:
+                            continue
+                        dist = _lev(chunk, rb)
+                        md = 2 if len(rb) >= 6 else 1
+                        if dist <= md:
+                            sim = 1.0 - (dist / max(len(rb), 1))
+                            brand_similarity = max(brand_similarity, sim * 0.95)
+                            break
+
+            has_homoglyphs = int(sld != sld.translate(str.maketrans(_homo)))
+            sub_chars = sum(1 for c in sld_flat if c in _subs)
+            sub_ratio = sub_chars / max(len(sld_flat), 1)
+
+            if hostname:
+                freq = Counter(hostname)
+                probs = [c / len(hostname) for c in freq.values()]
+                entropy = -sum(p * _math.log2(p) for p in probs if p > 0)
+            else:
+                entropy = 0.0
+            if sld_flat:
+                freq = Counter(sld_flat)
+                probs = [c / len(sld_flat) for c in freq.values()]
+                sld_entropy = -sum(p * _math.log2(p) for p in probs if p > 0)
+            else:
+                sld_entropy = 0.0
+
+            vowels = sum(1 for c in sld_flat if c in 'aeiou')
+            consonants = sum(1 for c in sld_flat if c.isalpha() and c not in 'aeiou')
+            cv_ratio = consonants / max(vowels, 1)
+            consonant_ratio = consonants / max(sum(1 for c in sld_flat if c.isalpha()), 1)
+
+            feats = [
+                len(hostname),
+                len(sld),
+                hostname.count('.'),
+                hostname.count('-'),
+                sum(c.isdigit() for c in hostname) / max(len(hostname), 1),
+                int(bool(re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', hostname))),
+                int(tld in _SUSP_TLDS),
+                len(tld),
+                int('@' in url_lower),
+                brand_in_domain,
+                brand_similarity,
+                has_homoglyphs,
+                sub_ratio,
+                entropy,
+                sld_entropy,
+                len(path),
+                path.count('/') - 1 if path else 0,
+                query.count('&') + (1 if query else 0),
+                int('%' in url_lower),
+                len(url_lower),
+                cv_ratio,
+                sum(1 for c in hostname if not c.isalnum() and c not in '.-'),
+                int('-' in sld and len(sld.split('-')) >= 2),
+                len([w for w in re.split(r'[^a-z]+', sld_norm) if w]),
+                consonant_ratio,
+            ]
+            return np.array(feats, dtype=float).reshape(1, -1)
 
         if n_features > 12:
             from collections import Counter as _Counter

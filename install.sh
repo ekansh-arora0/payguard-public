@@ -1,5 +1,5 @@
 #!/bin/bash
-# PayGuard macOS/Linux Installer
+# PayGuard One-Liner Installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install.sh | bash
 
 set -e
@@ -12,68 +12,59 @@ NC='\033[0m'
 echo -e "${BLUE}🛡️  PayGuard Installer${NC}"
 echo ""
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-
-if [ "$OS" = "Darwin" ]; then
-    PLATFORM="macos"
-    echo "📱 Detected: macOS ($ARCH)"
-elif [ "$OS" = "Linux" ]; then
-    PLATFORM="linux"
-    echo "🐧 Detected: Linux ($ARCH)"
-else
-    echo -e "${RED}❌ Unsupported OS: $OS${NC}"
+# Check Python 3
+if ! command -v python3 &>/dev/null; then
+    echo -e "${RED}❌ Python 3 not found. Install with: brew install python${NC}"
     exit 1
 fi
 
-VERSION="${VERSION:-1.0.0}"
-GITHUB_REPO="ekansh-arora0/payguard"
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+echo "✓ Python $PYTHON_VERSION detected"
 
-echo "📥 Downloading PayGuard v${VERSION}..."
-
-if [ "$PLATFORM" = "macos" ]; then
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/PayGuard-v${VERSION}-macos.zip"
-    INSTALL_DIR="/Applications"
-    
-    # Download to temp
-    TEMP_DIR=$(mktemp -d)
-    curl -fsSL "$DOWNLOAD_URL" -o "$TEMP_DIR/PayGuard.zip"
-    
-    echo "📦 Extracting..."
-    unzip -q "$TEMP_DIR/PayGuard.zip" -d "$TEMP_DIR"
-    
-    echo "🚀 Installing to Applications..."
-    cp -R "$TEMP_DIR/PayGuard.app" "$INSTALL_DIR/"
-    rm -rf "$TEMP_DIR"
-    
-    echo "✅ Installed to /Applications/PayGuard.app"
-    echo ""
-    echo "🚀 Starting PayGuard..."
-    open "$INSTALL_DIR/PayGuard.app"
-    
+# Clone repo
+INSTALL_DIR="$HOME/.payguard"
+if [ -d "$INSTALL_DIR/payguard" ]; then
+    echo "📦 Updating existing installation..."
+    cd "$INSTALL_DIR/payguard" && git pull origin main 2>/dev/null || true
 else
-    # Linux
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/PayGuard-v${VERSION}-linux.tar.gz"
-    INSTALL_DIR="$HOME/.local/bin"
+    echo "📥 Downloading PayGuard..."
     mkdir -p "$INSTALL_DIR"
-    
-    curl -fsSL "$DOWNLOAD_URL" | tar -xz -C "$INSTALL_DIR"
-    chmod +x "$INSTALL_DIR/payguard"
-    
-    # Add to PATH
-    if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-        echo "📝 Added to PATH"
-    fi
-    
-    echo "✅ Installed to $INSTALL_DIR/payguard"
-    echo ""
-    echo "🚀 Starting PayGuard..."
-    "$INSTALL_DIR/payguard" &
+    git clone --depth 1 https://github.com/ekansh-arora0/payguard.git "$INSTALL_DIR/payguard"
+fi
+
+cd "$INSTALL_DIR/payguard"
+
+# Install dependencies
+echo "📥 Installing dependencies..."
+pip3 install --user -q rumps httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null
+
+# Verify
+echo "🔍 Verifying..."
+python3 -c "
+import sys; sys.path.insert(0, '.')
+from payguard.detector import PayGuard
+from payguard.page_analyzer import classify_page
+from payguard.js_analyzer import classify_js
+print('✓ All modules loaded')
+" || {
+    echo -e "${RED}❌ Import failed${NC}"
+    exit 1
+}
+
+# Create aliases
+if ! grep -q "payguard" "$HOME/.zshrc" 2>/dev/null; then
+    echo '' >> "$HOME/.zshrc"
+    echo '# PayGuard' >> "$HOME/.zshrc"
+    echo 'alias payguard="python3 $HOME/.payguard/payguard/payguard/detector.py"' >> "$HOME/.zshrc"
 fi
 
 echo ""
-echo -e "${GREEN}✨ PayGuard is running!${NC}"
+echo -e "${GREEN}✅ PayGuard installed!${NC}"
 echo ""
-echo "Look for the shield icon in your menu bar/system tray"
-echo "❤️  Enjoying PayGuard? Star us: https://github.com/payguard/payguard"
+echo "Start now:"
+echo "  python3 $HOME/.payguard/payguard/payguard/detector.py"
+echo ""
+echo "Or open a new terminal and run:"
+echo "  payguard"
+echo ""
+echo "🛡️  Look for the shield icon in your menu bar"

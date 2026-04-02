@@ -48,6 +48,26 @@ groups:
         annotations:
           summary: "Unusual spike in high-risk URL detections"
 
+      # Authentication failures spike (possible key stuffing / abuse)
+      - alert: AuthFailuresSpike
+        expr: increase(payguard_security_events_total{event="auth_failure"}[10m]) > 40
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spike in authentication failures"
+          description: "More than 40 auth failures in 10 minutes. Investigate potential abuse."
+
+      # Rate-limit hits spike (possible automated scraping/abuse)
+      - alert: RateLimitSpike
+        expr: increase(payguard_security_events_total{event="rate_limited"}[10m]) > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spike in rate-limited requests"
+          description: "More than 80 rate-limited responses in 10 minutes."
+
       # Memory usage > 80% of limit
       - alert: HighMemoryUsage
         expr: process_resident_memory_bytes / 1073741824 > 3.2
