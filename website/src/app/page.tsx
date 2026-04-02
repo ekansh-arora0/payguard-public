@@ -383,8 +383,8 @@ export default function Home() {
   const usersCount = useCountUp(stats.active_users)
   const blockedCount = useCountUp(stats.high_risk_detected)
 
-  const macCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install.sh | bash'
-  const winCommand = 'irm https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install.ps1 | iex'
+  const macCommand = 'git clone https://github.com/ekansh-arora0/payguard.git && cd payguard && pip3 install rumps httpx xgboost numpy scikit-learn Pillow requests joblib && python3 payguard/detector.py'
+  const winCommand = 'git clone https://github.com/ekansh-arora0/payguard.git; cd payguard; pip install pystray Pillow httpx xgboost numpy scikit-learn requests joblib; python payguard_windows.py'
 
   useEffect(() => {
     const fetchStats = async () => {
