@@ -550,10 +550,10 @@ export default function Home() {
           
           <ScrollReveal delay={200}>
             <p className="text-xl text-zinc-400 mb-6 leading-relaxed max-w-2xl mx-auto">
-              Fine-tuned BERT + XGBoost ML models scan every pixel of your screen in real-time —
-              catching fake PayPal, Amazon, and bank sites
+              Trained on <strong className="text-white">1,978 real phishing kits</strong> — catches lookalike domains, fake stores, 
+              crypto scams, and obfuscated phishing pages
               <strong className="text-white"> before you enter your password</strong>.
-              No network calls. No false positives. Under 1 second per scan.
+              No network calls. All detection runs locally. Under 3 seconds per scan.
             </p>
           </ScrollReveal>
 
@@ -574,7 +574,7 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-emerald-500" />
-                <span>macOS/Windows/Linux</span>
+                <span>macOS & Windows</span>
               </div>
             </div>
           </ScrollReveal>
@@ -715,7 +715,7 @@ export default function Home() {
                 <GradientText>How it works</GradientText>
               </h2>
               <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-                Enterprise-grade ML detection — BERT, XGBoost, HTML CNN + Random Forest across 10+ threat categories
+                Three detection layers: domain analysis, page structure, and JavaScript behavior — trained on 1,978 real phishing kits
               </p>
             </div>
           </ScrollReveal>
@@ -724,43 +724,43 @@ export default function Home() {
             {[
               {
               icon: Brain,
-              title: 'BERT + XGBoost ML',
-              description: 'Fine-tuned BERT model detects phishing text with ≥92% confidence threshold. XGBoost scores URLs from 36 structural features — no network calls, ~1ms per URL.',
+              title: 'Domain-Tier Analysis',
+              description: 'Classifies every URL into safe, neutral, or suspicious tiers. Catches lookalike domains (paypa1.com), brand impersonation, and typosquatting — no hardcoded lists needed.',
               gradient: 'from-blue-500/20 to-cyan-500/20',
               iconColor: 'text-blue-400'
             },
             {
               icon: Eye,
-              title: 'AI Image Detection',
-              description: 'Detects AI-generated faces using DIRE model (97%+ accuracy). Catches deepfakes in video calls and fake profile photos.',
+              title: 'Page Structural Analysis',
+              description: 'Analyzes HTML structure — forms, iframes, scripts, identity mismatch. Catches fake stores, phishing redirects, and obfuscated pages that look legitimate on the surface.',
               gradient: 'from-purple-500/20 to-pink-500/20',
               iconColor: 'text-purple-400'
             },
             {
               icon: Lock,
-              title: 'Sub-Second Screen Scanner',
-              description: 'Quartz screen capture + Apple Vision OCR + parallel ML inference. Scans every 1.5 seconds. Average scan time 0.63–0.90s — catches threats before you react.',
+              title: 'JS Obfuscation Detection',
+              description: 'ML model trained on 1,978 real phishing kits detects hex-encoded variables, string arrays, and hidden redirects. Catches what regex-based scanners miss.',
               gradient: 'from-emerald-500/20 to-teal-500/20',
               iconColor: 'text-emerald-400'
             },
             {
               icon: Zap,
-              title: 'Clipboard Scam Detection',
-              description: 'Automatically scans copied text for scam patterns like fake prize notifications, crypto scams, and urgent account warnings.',
+              title: 'Behavioral Text Analysis',
+              description: 'Detects scam language patterns — urgency + demand combos, tech support scams, crypto reward scams. Works on any text from OCR, clipboard, or page content.',
               gradient: 'from-orange-500/20 to-red-500/20',
               iconColor: 'text-orange-400'
             },
             {
               icon: Server,
-              title: 'Browser Monitoring',
-              description: 'Real-time monitoring of Chrome/Safari history every 5 seconds. Detects fake login pages before you enter passwords.',
+              title: 'Payment Infrastructure Analysis',
+              description: 'Detects fake stores by checking payment processor integration, trust signals, and domain age. Catches sites that steal money without real checkout.',
               gradient: 'from-cyan-500/20 to-blue-500/20',
               iconColor: 'text-cyan-400'
             },
             {
               icon: Globe,
               title: 'Cross-Platform',
-              description: 'Works on macOS, Windows, and Linux. Menu bar app with auto-start and system tray support.',
+              description: 'Works on macOS and Windows. Menu bar / system tray app with real-time protection. One command to install.',
               gradient: 'from-yellow-500/20 to-amber-500/20',
               iconColor: 'text-yellow-400'
             }
@@ -787,17 +787,18 @@ export default function Home() {
               </h3>
               <div className="grid md:grid-cols-3 gap-4">
                 {[
-                  { name: 'BERT Phishing Text', examples: 'Fine-tuned transformer — OCR text scored ≥92% confidence' },
-                  { name: 'XGBoost URL Scoring', examples: '36 structural URL features, ~1ms, no network I/O' },
-                  { name: 'HTML CNN + Random Forest', examples: '18 structural + raw-byte models for phishing HTML' },
-                  { name: 'Typosquatting', examples: 'paypa1, amaz0n, g00gle' },
-                  { name: 'AI-Generated Faces', examples: 'Deepfakes, fake profile photos (DIRE model)' },
-                  { name: 'Crypto Scams', examples: 'metamask-verify, wallet-connect' },
-                  { name: 'Homograph Attacks', examples: 'xn-- domains, Cyrillic chars' },
-                  { name: 'URL Shorteners', examples: 'bit.ly, tinyurl (hides destination)' },
-                  { name: 'IP Addresses', examples: '192.168.1.1 instead of domain' },
-                  { name: 'Clipboard Scams', examples: 'Fake prize texts, urgent account warnings' },
+                  { name: 'Lookalike Domains', examples: 'paypa1.com, arnazon.com, gooogle.com' },
+                  { name: 'Brand Impersonation', examples: 'secure-chase-banking.com' },
+                  { name: 'Fake Stores', examples: 'New domains with no payment processor' },
+                  { name: 'Crypto Scams', examples: 'Fake airdrops, wallet connect phishing' },
+                  { name: 'Obfuscated JS', examples: 'Hex-encoded phishing kit scripts' },
+                  { name: 'Phishing Redirects', examples: 'Tiny pages with encoded query strings' },
+                  { name: 'Homograph Attacks', examples: 'Cyrillic characters, digit substitution' },
+                  { name: 'URL Shorteners', examples: 'Hidden destinations, redirect chains' },
                   { name: 'Tech Support Scams', examples: 'Fake Microsoft/Apple alerts' },
+                  { name: 'Identity Mismatch', examples: 'Page claims brand not in domain' },
+                  { name: 'Suspicious TLDs', examples: '.top, .xyz, .site, .shop' },
+                  { name: 'New Domains', examples: '0-day-old domains with phishing content' },
                 ].map((category, i) => (
                   <div key={i} className="p-4 bg-black/30 rounded-xl border border-white/5 hover:border-emerald-500/30 transition-colors">
                     <div className="font-semibold text-emerald-400 mb-1">{category.name}</div>
