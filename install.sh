@@ -1,69 +1,58 @@
 #!/bin/bash
 set -e
 
-echo "🛡️  PayGuard Installer"
+echo ""
+echo "  🛡️  PayGuard - AI Phishing Detection"
+echo "  Installing..."
 echo ""
 
-# Check Python 3
+# Check Python
 if ! command -v python3 &>/dev/null; then
-    echo "❌ Python 3 not found."
-    echo "  Ubuntu/Debian: sudo apt install python3 python3-pip"
-    echo "  Fedora: sudo dnf install python3 python3-pip"
+    echo "  ❌ Python 3 not found"
+    echo "  Install it first: sudo apt install python3 python3-pip"
     exit 1
 fi
 
-echo "✓ Python $(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')") detected"
+echo "  ✓ Python found"
 
-# Detect OS
-OS="$(uname -s)"
-echo "📱 Detected: $OS"
+# Create install directory
+DIR="$HOME/.payguard"
+mkdir -p "$DIR/models"
+cd "$DIR"
 
-# Clone the repo
-INSTALL_DIR="$HOME/.payguard"
-if [ -d "$INSTALL_DIR" ]; then
-    echo "📦 Updating existing installation..."
-    cd "$INSTALL_DIR" && git pull origin main 2>/dev/null || true
-else
-    echo "📥 Downloading PayGuard..."
-    git clone --depth 1 https://github.com/ekansh-arora0/payguard-public.git "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
-fi
+# Download files directly (no git needed)
+echo "  📥 Downloading..."
+FILES=(
+    "payguard_unified.py"
+    "page_analyzer.py" 
+    "js_analyzer.py"
+    "models/url_xgboost_v2.model"
+    "models/js_xgboost_v1.model"
+)
 
-# Install dependencies (skip rumps on Linux - it's macOS-only)
-echo "📥 Installing dependencies..."
-if [ "$OS" = "Darwin" ]; then
-    pip3 install --user -q rumps httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || true
-else
-    pip3 install --user -q httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || true
-fi
+BASE="https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main"
+
+for f in "${FILES[@]}"; do
+    curl -sSL "$BASE/$f" -o "$DIR/$f" 2>/dev/null || {
+        echo "  ⚠️  Failed to download $f"
+    }
+done
+
+# Install dependencies
+echo "  📦 Installing packages..."
+pip3 install --user -q httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || true
+pip3 install --user -q rumps 2>/dev/null || true  # macOS only, fails silently on Linux
 
 # Verify
-echo "🔍 Verifying..."
-cd "$INSTALL_DIR"
-python3 -c "
-import sys; sys.path.insert(0, '.')
-from payguard_unified import PayGuard
-from page_analyzer import classify_page
-from js_analyzer import classify_js
-print('✓ All modules loaded')
-" || {
-    echo "❌ Module import failed"
+echo "  🔍 Checking..."
+cd "$DIR"
+python3 -c "from payguard_unified import PayGuard; print('  ✓ Ready')" 2>/dev/null || {
+    echo "  ❌ Something went wrong"
     exit 1
 }
 
 echo ""
-echo "✅ PayGuard installed to $INSTALL_DIR"
+echo "  ✅ Done!"
 echo ""
-
-if [ "$OS" = "Darwin" ]; then
-    echo "Start with:"
-    echo "  cd $INSTALL_DIR && python3 payguard_unified.py"
-    echo ""
-    echo "🛡️  Look for the shield icon in your menu bar"
-else
-    echo "📋 Linux: Run the detection engine directly:"
-    echo "  cd $INSTALL_DIR && python3 payguard_unified.py"
-    echo ""
-    echo "Or use the API:"
-    echo "  cd $INSTALL_DIR/backend && PAYGUARD_ALLOW_DEMO_KEY=true uvicorn server:app --host 0.0.0.0 --port 8002"
-fi
+echo "  To start: cd ~/.payguard && python3 payguard_unified.py"
+echo ""
