@@ -384,7 +384,7 @@ export default function Home() {
   const blockedCount = useCountUp(stats.high_risk_detected)
 
   const macCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/install.sh | bash'
-  const winCommand = 'irm https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/install.ps1 | iex'
+  const winCommand = 'pip install httpx xgboost numpy scikit-learn Pillow requests joblib; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_unified.py -o payguard_unified.py; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/page_analyzer.py -o page_analyzer.py; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/js_analyzer.py -o js_analyzer.py; python payguard_unified.py'
 
   useEffect(() => {
     const fetchStats = async () => {
