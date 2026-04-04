@@ -16,11 +16,18 @@ curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/
 echo "  ✓ Done"
 
 echo "  2/3 Installing packages..."
-# Just use pip directly, no venv, no fancy stuff
-python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --break-system-packages 2>&1 || \
-python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --user 2>&1 || \
-sudo python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib 2>&1
-echo "  ✓ Done"
+# Try each method until one works
+if python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --break-system-packages 2>&1; then
+    echo "  ✓ Done"
+elif python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --user 2>&1; then
+    echo "  ✓ Done"
+elif sudo python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib 2>&1; then
+    echo "  ✓ Done"
+else
+    echo "  ❌ pip install failed."
+    echo "  Install pip first: sudo apt install python3-pip"
+    exit 1
+fi
 
 echo ""
 echo "  3/3 Checking..."
@@ -30,7 +37,7 @@ if python3 -c "from payguard_unified import PayGuard" 2>/dev/null; then
     echo ""
     echo "  Run: cd ~/.payguard && python3 payguard_unified.py"
 else
-    echo "  ❌ Failed. Run manually:"
+    echo "  ❌ Import failed. Run manually:"
     echo "     cd ~/.payguard"
     echo "     python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --break-system-packages"
     echo "     python3 payguard_unified.py"
