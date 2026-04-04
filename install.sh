@@ -16,37 +16,23 @@ curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/
 echo "  ✓ Done"
 
 echo "  2/3 Installing packages..."
-# Try all possible pip commands
-PIP_CMD=""
-for cmd in "python3 -m pip" "pip3" "pip"; do
-    if command -v $cmd >/dev/null 2>&1; then
-        PIP_CMD="$cmd"
-        break
-    fi
-done
-
-if [ -z "$PIP_CMD" ]; then
-    echo "  ❌ pip not found. Install: sudo apt install python3-pip"
+# Create a virtual environment - works everywhere, no permission issues
+python3 -m venv "$DIR/venv" 2>/dev/null || {
+    echo "  ❌ venv not available. Install: sudo apt install python3-venv"
     exit 1
-fi
-
-# Install with all possible flags for compatibility
-$PIP_CMD install --break-system-packages httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || \
-$PIP_CMD install --user httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || \
-$PIP_CMD install httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null || \
-sudo $PIP_CMD install httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null
-
+}
+source "$DIR/venv/bin/activate"
+pip install httpx xgboost numpy scikit-learn Pillow requests joblib
 echo "  ✓ Done"
 
 echo "  3/3 Checking..."
 cd "$DIR"
+source "$DIR/venv/bin/activate"
 if python3 -c "from payguard_unified import PayGuard" 2>/dev/null; then
     echo "  ✅ Ready!"
     echo ""
-    echo "  Run: cd ~/.payguard && python3 payguard_unified.py"
+    echo "  Run: cd ~/.payguard && source venv/bin/activate && python3 payguard_unified.py"
 else
-    echo "  ⚠️  Try this:"
-    echo "     cd ~/.payguard"
-    echo "     python3 -m pip install --break-system-packages httpx xgboost numpy scikit-learn Pillow requests joblib"
-    echo "     python3 payguard_unified.py"
+    echo "  ❌ Failed. Contact support."
+    exit 1
 fi
