@@ -16,23 +16,41 @@ curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/
 echo "  ✓ Done"
 
 echo "  2/3 Installing packages..."
-# Create a virtual environment - works everywhere, no permission issues
-python3 -m venv "$DIR/venv" 2>/dev/null || {
-    echo "  ❌ venv not available. Install: sudo apt install python3-venv"
+# Try venv first (cleanest, works everywhere)
+if python3 -m venv "$DIR/venv" 2>/dev/null; then
+    source "$DIR/venv/bin/activate"
+    pip install -q httpx xgboost numpy scikit-learn Pillow requests joblib
+    echo "  ✓ Done (venv)"
+# Try --break-system-packages (Ubuntu 24.04+)
+elif python3 -m pip install --break-system-packages -q httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null; then
+    echo "  ✓ Done (system)"
+# Try --user (older systems)
+elif python3 -m pip install --user -q httpx xgboost numpy scikit-learn Pillow requests joblib 2>/dev/null; then
+    echo "  ✓ Done (user)"
+else
+    echo "  ❌ pip install failed. Try:"
+    echo "     sudo apt install python3-pip python3-venv"
+    echo "     Then run this script again"
     exit 1
-}
-source "$DIR/venv/bin/activate"
-pip install httpx xgboost numpy scikit-learn Pillow requests joblib
-echo "  ✓ Done"
+fi
 
+echo ""
 echo "  3/3 Checking..."
 cd "$DIR"
-source "$DIR/venv/bin/activate"
+if [ -d "$DIR/venv" ]; then
+    source "$DIR/venv/bin/activate"
+fi
 if python3 -c "from payguard_unified import PayGuard" 2>/dev/null; then
     echo "  ✅ Ready!"
     echo ""
-    echo "  Run: cd ~/.payguard && source venv/bin/activate && python3 payguard_unified.py"
+    if [ -d "$DIR/venv" ]; then
+        echo "  Run: cd ~/.payguard && source venv/bin/activate && python3 payguard_unified.py"
+    else
+        echo "  Run: cd ~/.payguard && python3 payguard_unified.py"
+    fi
 else
-    echo "  ❌ Failed. Contact support."
-    exit 1
+    echo "  ❌ Import failed. Run:"
+    echo "     cd ~/.payguard"
+    echo "     python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib"
+    echo "     python3 payguard_unified.py"
 fi
