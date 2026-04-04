@@ -16,14 +16,10 @@ curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/
 echo "  ✓ Done"
 
 echo "  2/3 Installing packages..."
-
-# Create venv
-python3 -m venv "$DIR/venv"
-source "$DIR/venv/bin/activate"
-
-# Install packages - show output so you can see errors
-pip install httpx xgboost numpy scikit-learn Pillow requests joblib
-
+# Just use pip directly, no venv, no fancy stuff
+python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --break-system-packages 2>&1 || \
+python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --user 2>&1 || \
+sudo python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib 2>&1
 echo "  ✓ Done"
 
 echo ""
@@ -32,11 +28,10 @@ cd "$DIR"
 if python3 -c "from payguard_unified import PayGuard" 2>/dev/null; then
     echo "  ✅ Ready!"
     echo ""
-    echo "  Run: cd ~/.payguard && source venv/bin/activate && python3 payguard_unified.py"
+    echo "  Run: cd ~/.payguard && python3 payguard_unified.py"
 else
-    echo "  ❌ Failed. Run these commands:"
+    echo "  ❌ Failed. Run manually:"
     echo "     cd ~/.payguard"
-    echo "     source venv/bin/activate"
-    echo "     pip install httpx xgboost numpy scikit-learn Pillow requests joblib"
+    echo "     python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib --break-system-packages"
     echo "     python3 payguard_unified.py"
 fi
