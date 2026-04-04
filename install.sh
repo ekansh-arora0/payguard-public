@@ -4,6 +4,15 @@ echo ""
 echo "  🛡️  PayGuard - AI Phishing Detection"
 echo ""
 
+# Make sure pip exists
+python3 -m pip --version >/dev/null 2>&1 || {
+    echo "  ❌ pip not found. Install it first:"
+    echo "     Ubuntu/Debian: sudo apt install python3-pip"
+    echo "     Fedora: sudo dnf install python3-pip"
+    echo "     macOS: brew install python"
+    exit 1
+}
+
 DIR="$HOME/.payguard"
 mkdir -p "$DIR/models"
 cd "$DIR"
@@ -15,18 +24,19 @@ curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/
 curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/models/url_xgboost_v2.model" -o "$DIR/models/url_xgboost_v2.model"
 curl -sSL "https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/models/js_xgboost_v1.model" -o "$DIR/models/js_xgboost_v1.model"
 
-echo "  📦 Installing packages (this takes a minute)..."
-pip3 install httpx xgboost numpy scikit-learn Pillow requests joblib 2>&1 | grep -v "WARNING\|already satisfied" || true
+echo "  📦 Installing packages..."
+python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib 2>&1 | tail -3
 
-# Check if it works
+# Verify
+echo ""
+echo "  🔍 Checking..."
 if python3 -c "from payguard_unified import PayGuard" 2>/dev/null; then
-    echo ""
-    echo "  ✅ Installed!"
+    echo "  ✅ Ready!"
     echo ""
     echo "  Run: cd ~/.payguard && python3 payguard_unified.py"
 else
-    echo ""
-    echo "  ⚠️  Packages installed but import failed."
-    echo "  Try: cd ~/.payguard && python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib"
-    echo "  Then: python3 payguard_unified.py"
+    echo "  ⚠️  Import failed. Try:"
+    echo "     cd ~/.payguard"
+    echo "     python3 -m pip install httpx xgboost numpy scikit-learn Pillow requests joblib"
+    echo "     python3 payguard_unified.py"
 fi
