@@ -35,9 +35,9 @@ from urllib.parse import urlparse
 
 try:
     import rumps
+    HAS_RUMPS = True
 except ImportError:
-    print("Missing: pip3 install rumps")
-    sys.exit(1)
+    HAS_RUMPS = False
 
 try:
     from PIL import Image
@@ -609,14 +609,21 @@ class PayGuard:
         self._monitor_stop = threading.Event()
 
         # Menu bar - rumps auto-adds Quit, don't add custom one
-        self.app = rumps.App("PayGuard")
-        self.toggle_item = rumps.MenuItem('OFF', callback=self.toggle)
-        self.app.menu = [self.toggle_item]
+        if HAS_RUMPS:
+            self.app = rumps.App("PayGuard")
+            self.toggle_item = rumps.MenuItem('OFF', callback=self.toggle)
+            self.app.menu = [self.toggle_item]
+            self.update_status()
+        else:
+            self.app = None
+            self.toggle_item = None
+            self.app_title = "🛡️"
 
-        self.update_status()
         self.start_monitoring()  # Auto-start monitoring since enabled=True at launch
 
     def update_status(self):
+        if not HAS_RUMPS:
+            return
         if self.enabled:
             self.toggle_item.title = 'ON'
             self.app.title = "\U0001f6e1\ufe0f"
@@ -625,6 +632,8 @@ class PayGuard:
             self.app.title = "\u26ab"
 
     def toggle(self, _):
+        if not HAS_RUMPS:
+            return
         self.enabled = not self.enabled
         self.update_status()
 
