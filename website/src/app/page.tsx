@@ -384,7 +384,8 @@ export default function Home() {
   const blockedCount = useCountUp(stats.high_risk_detected)
 
   const macCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/install.sh | bash'
-  const winCommand = 'pip install httpx xgboost numpy scikit-learn Pillow requests joblib; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_unified.py -o payguard_unified.py; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/page_analyzer.py -o page_analyzer.py; curl -L https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/js_analyzer.py -o js_analyzer.py; python payguard_unified.py'
+  const winCommand = 'pip install httpx xgboost numpy scikit-learn Pillow requests joblib pystray win10toast && curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_unified.py -o payguard_unified.py && python payguard_unified.py'
+  const linuxCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/install.sh | bash'
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -622,7 +623,7 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-emerald-500" />
-                <span>macOS & Windows</span>
+                <span>macOS, Linux & Windows</span>
               </div>
             </div>
           </ScrollReveal>
@@ -805,10 +806,10 @@ export default function Home() {
               gradient: 'from-cyan-500/20 to-blue-500/20',
               iconColor: 'text-cyan-400'
             },
-            {
+              {
               icon: Globe,
               title: 'Cross-Platform',
-              description: 'Works on macOS and Windows. Menu bar / system tray app with real-time protection. One command to install.',
+              description: 'Works on macOS, Linux, and Windows. Menu bar (macOS), system tray (Windows), or CLI (Linux) with real-time protection. One command to install.',
               gradient: 'from-yellow-500/20 to-amber-500/20',
               iconColor: 'text-yellow-400'
             }

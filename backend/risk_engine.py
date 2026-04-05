@@ -5,6 +5,7 @@ import re
 import socket
 import ssl
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -222,6 +223,7 @@ class RiskScoringEngine:
                     booster = _xgb.Booster()
                     booster.load_model(str(v2_path))
                     self.ml_model = booster
+                    self.ml_scaler = None  # v2 features are already normalized
                     loaded = True
                     logger.info("Loaded v2 URL ML model (domain-focused features)")
                 except Exception as e:
@@ -287,7 +289,7 @@ class RiskScoringEngine:
                 except Exception as e:
                     logger.warning(f"Pickle XGBoost load failed ({p.name}): {e}")
 
-            if loaded and self.ml_scaler is None and scaler_path.exists():
+            if loaded and self.ml_scaler is None and scaler_path.exists() and "v2" not in str(v2_path):
                 try:
                     self.ml_scaler = joblib.load(scaler_path)
                 except Exception:
