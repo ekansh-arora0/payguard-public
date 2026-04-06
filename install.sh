@@ -76,21 +76,24 @@ fi
 cd "$INSTALL_DIR/payguard"
 
 # Install dependencies
-echo "📥 Installing dependencies..."
+echo "Installing dependencies..."
 
 # Core dependencies (all platforms)
-PIP_PACKAGES="httpx xgboost numpy scikit-learn Pillow requests joblib"
+# tkinter is usually included with Python, but ensure it's available
+PIP_PACKAGES="httpx xgboost numpy scikit-learn Pillow requests joblib pystray mss pyperclip"
 
 # Platform-specific
 if [ "$PLATFORM" = "macOS" ]; then
     PIP_PACKAGES="$PIP_PACKAGES rumps"
-    echo "   Installing: $PIP_PACKAGES (menu bar app)"
+    echo "Installing: $PIP_PACKAGES (menu bar app)"
 elif [ "$PLATFORM" = "Linux" ]; then
-    PIP_PACKAGES="$PIP_PACKAGES pystray"
-    echo "   Installing: $PIP_PACKAGES (system tray)"
+    if ! command -v notify-send &>/dev/null; then
+        echo "Installing libnotify for dialogs: sudo apt-get install libnotify-bin"
+    fi
+    echo "Installing: $PIP_PACKAGES (system tray)"
 elif [ "$PLATFORM" = "Windows" ]; then
-    PIP_PACKAGES="$PIP_PACKAGES pystray win10toast"
-    echo "   Installing: $PIP_PACKAGES (system tray)"
+    PIP_PACKAGES="$PIP_PACKAGES pywin32"
+    echo "Installing: $PIP_PACKAGES (system tray)"
 fi
 
 pip3 install --user -q $PIP_PACKAGES 2>/dev/null || pip3 install $PIP_PACKAGES 2>/dev/null || true

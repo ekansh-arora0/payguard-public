@@ -1,94 +1,56 @@
-# PayGuard - AI Phishing & Scam Detection
+# PayGuard - Protect Yourself from Scams
 
-Real-time protection against phishing, crypto scams, fake stores, and credential harvesting.
+Simple protection for seniors against phishing, fake websites, and online scams.
 
-## Install
+## What It Does
 
-### macOS
-```bash
-curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install.sh | bash
-```
+- **Shields in your menu bar** - Shows green when safe, red when danger detected
+- **Checks websites automatically** - Scans every page you visit
+- **Big warning popups** - Clear alerts when scams are found
+- **Works on Mac, Windows, and Linux** - One download does it all
 
-### Windows
-```bash
-git clone https://github.com/ekansh-arora0/payguard.git
-cd payguard
-pip install pystray Pillow httpx xgboost numpy scikit-learn requests joblib
-python payguard/payguard_windows.py
-```
+## Install (One Command)
 
-Look for the shield icon in your menu bar.
+### Mac, Linux, or Windows (with Python)
 
-## How It Works
-
-### Detection Layers
-
-| Layer | What It Catches |
-|-------|----------------|
-| Domain tier | Lookalikes (paypa1.com), suspicious TLDs (.top, .xyz), brand impersonation |
-| Page analyzer | New domains, SPA shells, identity mismatch, payment analysis, tiny redirect pages |
-| JS analyzer | Obfuscated phishing kit scripts (hex vars, string arrays, hidden redirects) |
-| Reputation | Known malicious URLs from OpenPhish, PhishTank, URLhaus feeds |
-| Text analyzer | Scam phrases, urgency + demand patterns, crypto scam signals |
-
-### Speed
-
-- Neutral domains (github.com, google.com): **<0.5s**
-- Suspicious domains (okxweb3.io): **<1s**
-- Full page analysis (schutzsale.shop): **3-4s**
-
-### What It Catches
-
-- `paypa1.com` → lookalike detection
-- `secure-chase-banking.com` → brand impersonation
-- `palmeirasstore-online.top` → new domain + SPA shell + suspicious TLD
-- `auroraproject.site` → 1-day-old domain + identity mismatch
-- `okxweb3.io` → crypto airdrop scam
-- `rosyquartzwb.name/dvea` → tiny redirect page + obfuscated JS
-- `juvo.sentraxis.st/.../index.php` → hex-obfuscated phishing kit redirect
-
-## Architecture
-
-```
-Screen → OCR → URL Extraction → URL Analysis (parallel)
-  │                        │
-  │                        ├── Reputation (instant)
-  │                        ├── Domain tier (instant)
-  │                        ├── URL structure (instant)
-  │                        ├── Page analyzer (1-3s, with timeout)
-  │                        └── JS analyzer (runs on HTML)
-  │
-  └── Behavioral text analysis (runs on OCR text)
-```
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `detector.py` | Main menu bar app (rumps) |
-| `page_analyzer.py` | Page structural analysis (forms, iframes, scripts, identity) |
-| `js_analyzer.py` | JavaScript obfuscation detection (trained on 1978 phishing kits) |
-| `backend/` | Risk engine, auth, reputation service, models |
-| `models/` | XGBoost models (URL + JS) |
-| `setup.py` | Package installer |
-
-## Configuration
+Copy and paste this in your terminal:
 
 ```bash
-# Run
-python3 payguard/detector.py
-
-# Scan interval (default: 3 seconds)
-# Alert cooldown (default: 10 seconds)
-# Edit in detector.py __init__
+curl -fsSL https://payguard.app/install | bash
 ```
 
-## Privacy
+Or manually:
 
-- All processing happens locally
-- No data sent to cloud
-- No telemetry without consent
+```bash
+# 1. Install Python from python.org (Windows) or App Store (Mac)
+# 2. Download PayGuard from github.com/ekansh-arora0/payguard
+# 3. Run: python3 payguard_crossplatform.py
+```
 
-## License
+## How to Use
 
-MIT
+1. Look for the **shield icon** in your menu bar (top of screen)
+2. Click the shield to turn protection **ON** (green)
+3. Browse the internet as normal
+4. If a scam is detected, a **big red warning** pops up
+5. Click "I Understand" and close the dangerous website
+
+## What It Catches
+
+- Fake bank websites
+- Password-stealing login pages  
+- Tech support scams
+- Fake prize winner notifications
+- Crypto scam websites
+- Lookalike domains (paypa1.com instead of paypal.com)
+
+## System Requirements
+
+- Mac, Windows 10/11, or Linux
+- Python 3.8 or higher
+- Internet connection (for website checks)
+
+## Need Help?
+
+- Email: support@payguard.app
+- Website: payguard.app

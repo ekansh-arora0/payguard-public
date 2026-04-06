@@ -18,9 +18,12 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 
 # Setup logging
+SYSTEM = platform.system()
 LOG_DIR = os.path.expanduser("~/Library/Logs/PayGuard")
-if platform.system() == "Windows":
+if SYSTEM == "Windows":
     LOG_DIR = os.path.expanduser("~/AppData/Local/PayGuard/Logs")
+elif SYSTEM == "Linux":
+    LOG_DIR = os.path.expanduser("~/.local/share/payguard/logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
@@ -53,6 +56,47 @@ try:
 except ImportError:
     HAS_PYTRAY = False
     logger.warning("pystray not available")
+
+# Cross-platform clipboard
+try:
+    import pyperclip
+    HAS_PYPERCLIP = True
+except ImportError:
+    HAS_PYPERCLIP = False
+    logger.warning("pyperclip not available - clipboard scanning disabled")
+
+# Cross-platform screen capture (mss is best - works everywhere)
+try:
+    import mss
+    import mss.tools
+    HAS_MSS = True
+except ImportError:
+    HAS_MSS = False
+    logger.warning("mss not available - trying fallback screen capture")
+
+# Cross-platform notifications
+try:
+    from plyer import notification
+    HAS_PLYER = True
+except ImportError:
+    HAS_PLYER = False
+    logger.warning("plyer not available - using platform-specific notification fallback")
+
+# Cross-platform TTS for voice alerts
+try:
+    from gtts import gTTS
+    HAS_GTTS = True
+except ImportError:
+    HAS_GTTS = False
+    logger.warning("gTTS not available for voice alerts")
+
+# Cross-platform dialog popups
+try:
+    import tkinter as tk
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
+    logger.warning("tkinter not available for dialogs")
 
 
 class PayGuardApp:
@@ -94,10 +138,12 @@ class PayGuardApp:
     def setup_auto_start(self):
         """Setup auto-start on system boot"""
         try:
-            if platform.system() == "Darwin":
-                # macOS: Add to LaunchAgents
+            system = platform.system()
+            script_path = os.path.abspath(__file__)
+            
+            if system == "Darwin":
                 plist_path = os.path.expanduser("~/Library/LaunchAgents/com.payguard.menubar.plist")
-                plist_content = '''<?xml version="1.0" encoding="UTF-8"?>
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -106,31 +152,51 @@ class PayGuardApp:
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>{}/payguard_crossplatform.py</string>
+        <string>{script_path}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
 </dict>
-</plist>'''.format(os.path.dirname(os.path.abspath(__file__)))
+</plist>'''
                 
                 if not os.path.exists(plist_path):
                     with open(plist_path, 'w') as f:
                         f.write(plist_content)
                     logger.info(f"Auto-start configured: {plist_path}")
                     
-            elif platform.system() == "Windows":
-                # Windows: Add to startup registry
+            elif system == "Windows":
                 import winreg
                 exe_path = sys.executable
-                script_path = os.path.abspath(__file__)
                 key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
                 try:
                     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
                     winreg.SetValueEx(key, "PayGuard", 0, winreg.REG_SZ, f'"{exe_path}" "{script_path}"')
                     winreg.CloseKey(key)
                     logger.info("Auto-start configured for Windows")
-                except:
-                    logger.warning("Could not configure Windows auto-start")
+                except Exception as e:
+                    logger.warning(f"Could not configure Windows auto-start: {e}")
+            else:
+                # Linux: systemd user service
+                xdg_dir = os.path.expanduser("~/.config/autostart")
+                desktop_file = os.path.join(xdg_dir, "payguard.desktop")
+                
+                if not os.path.exists(desktop_file):
+                    try:
+                        os.makedirs(xdg_dir, exist_ok=True)
+                        desktop_content = f'''[Desktop Entry]
+Type=Application
+Name=PayGuard
+Comment=PayGuard Phishing & Scam Detection
+Exec=python3 {script_path}
+Icon=security-high
+Terminal=false
+Categories=Security;Utility;
+'''
+                        with open(desktop_file, 'w') as f:
+                            f.write(desktop_content)
+                        logger.info(f"Auto-start configured for Linux: {desktop_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not configure Linux auto-start: {e}")
         except Exception as e:
             logger.warning(f"Auto-start setup failed: {e}")
     
@@ -163,20 +229,38 @@ class PayGuardApp:
                 time.sleep(5)
     
     def play_alert(self):
-        """Play loud alert sound for danger"""
+        """Play loud alert sound for danger - cross-platform"""
         if not self.voice_alerts:
             return
-            
+        
+        message = "Danger! Threat detected. Close the website now."
+        
         try:
-            if platform.system() == "Darwin":
-                # Use say command for voice alert
-                subprocess.run(["say", "Danger! Threat detected. Close the website now."], 
-                            capture_output=True)
-            elif platform.system() == "Windows":
-                # Windows TTS
-                import win32com.client
-                speaker = win32com.client.Dispatch("SAPI.SpVoice")
-                speaker.Speak("Danger! Threat detected. Close the website now.")
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.Popen(["say", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif system == "Windows":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONSTOP)
+                except ImportError:
+                    pass
+                try:
+                    import win32com.client
+                    speaker = win32com.client.Dispatch("SAPI.SpVoice")
+                    speaker.Speak(message)
+                except ImportError:
+                    pass
+            else:
+                # Linux - try espeak or festival
+                try:
+                    subprocess.Popen(["espeak", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except FileNotFoundError:
+                    try:
+                        subprocess.Popen(["festival", "--tts"], stdin=subprocess.PIPE, 
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).communicate(input=message.encode())
+                    except FileNotFoundError:
+                        pass
         except Exception as e:
             logger.warning(f"Voice alert failed: {e}")
     
@@ -190,10 +274,20 @@ class PayGuardApp:
         logger.info(f"Backend online: {self.backend_online}")
     
     def _capture_screen(self):
-        """Capture screenshot"""
+        """Capture screenshot - cross-platform using mss"""
         try:
-            if platform.system() == "Darwin":
-                # macOS
+            # Try mss first (works on Windows, Linux, macOS)
+            if HAS_MSS:
+                with mss.mss() as sct:
+                    sct_img = sct.grab(sct.monitors[1])
+                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    return buf.getvalue()
+            
+            # Fallback: platform-specific capture
+            system = platform.system()
+            if system == "Darwin":
                 result = subprocess.run(
                     ["screencapture", "-x", "/tmp/payguard_screen.png"],
                     capture_output=True, timeout=10
@@ -201,20 +295,25 @@ class PayGuardApp:
                 if result.returncode == 0:
                     with open("/tmp/payguard_screen.png", "rb") as f:
                         return f.read()
-            elif platform.system() == "Windows":
-                # Windows using PIL
-                import pyautogui
-                img = pyautogui.screenshot()
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                return buf.getvalue()
+            elif system == "Windows":
+                try:
+                    import pyautogui
+                    img = pyautogui.screenshot()
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    return buf.getvalue()
+                except ImportError:
+                    logger.warning("pyautogui not installed")
             else:
-                # Linux
-                import pyscreenshot
-                img = pyscreenshot.grab()
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                return buf.getvalue()
+                # Linux fallback
+                try:
+                    import pyscreenshot
+                    img = pyscreenshot.grab()
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    return buf.getvalue()
+                except ImportError:
+                    logger.warning("pyscreenshot not installed")
         except Exception as e:
             logger.error(f"Capture failed: {e}")
         return None
@@ -342,15 +441,14 @@ class PayGuardApp:
     def scan_clipboard(self):
         """Scan clipboard text/URLs for scams - LIVE MONITORING"""
         try:
-            # Get clipboard content
+            # Get clipboard content - cross-platform
             if platform.system() == "Darwin":
                 text = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=3).stdout
-            elif platform.system() == "Windows":
-                import pyperclip
+            elif HAS_PYPERCLIP:
                 text = pyperclip.paste()
             else:
-                import pyperclip
-                text = pyperclip.paste()
+                logger.warning("Clipboard access not available - no pyperclip")
+                return {"is_scam": False, "message": "Clipboard not available"}
             
             if not text:
                 return {"is_scam": False, "message": "Empty clipboard"}
@@ -456,11 +554,11 @@ def create_menu(app):
         if app.protection_enabled:
             app.start_monitoring()
             icon.image = create_icon(green=True)
-            show_notification("🛡️ PROTECTION ON", "PayGuard is now protecting you!")
+            show_notification("Protection ON", "PayGuard is now protecting you!")
         else:
             app.stop_monitoring()
             icon.image = create_icon(green=False)
-            show_notification("⏸️ PROTECTION OFF", "PayGuard is paused")
+            show_notification("Protection OFF", "PayGuard is paused")
     
     def scan_now(icon, item):
         result = app.scan_clipboard()
@@ -512,49 +610,141 @@ What's protected:
 
 
 def show_notification(title, message):
-    """Show SIMPLE system notification - senior friendly"""
+    """Show dialog popup - senior-friendly, works cross-platform"""
     try:
-        # Simplify messages for seniors
         simple_title = title
         simple_message = message
         
-        # Make messages super simple
-        if "DANGER" in message.upper() or "THREAT" in message.upper():
-            simple_title = "🚨 DANGER!"
-            simple_message = "CLOSE THIS WEBSITE NOW! It's a scam!"
+        if "DANGER" in message.upper() or "THREAT" in message.upper() or "SCAM" in message.upper():
+            simple_title = "WARNING"
+            simple_message = "Scam detected! Close the website now!"
         elif "SAFE" in message.upper():
-            simple_title = "✅ SAFE"
-            simple_message = "This website is OK"
+            simple_title = "Safe"
+            simple_message = "No threats detected"
         elif "ON" in message.upper():
-            simple_title = "🛡️ PROTECTION ON"
+            simple_title = "Protection ON"
             simple_message = "PayGuard is protecting you"
         elif "OFF" in message.upper():
-            simple_title = "⏸️ PROTECTION OFF"
+            simple_title = "Protection OFF"
             simple_message = "PayGuard is paused"
         
-        if platform.system() == "Darwin":
-            subprocess.run([
+        # Use tkinter for dialog popup (works everywhere)
+        if HAS_TKINTER:
+            def show_dialog():
+                root = tk.Tk()
+                root.withdraw()
+                
+                if "WARNING" in simple_title or "SCAM" in simple_message.upper():
+                    # Critical alert - show big warning dialog
+                    dialog = tk.Toplevel(root)
+                    dialog.title("PayGuard Alert")
+                    dialog.geometry("450x200")
+                    dialog.configure(bg="#ffcccc")
+                    
+                    # Warning label
+                    warn_label = tk.Label(
+                        dialog, 
+                        text="WARNING: SCAM DETECTED!",
+                        font=("Arial", 16, "bold"),
+                        fg="red",
+                        bg="#ffcccc"
+                    )
+                    warn_label.pack(pady=15)
+                    
+                    msg_label = tk.Label(
+                        dialog,
+                        text=simple_message,
+                        font=("Arial", 12),
+                        bg="#ffcccc",
+                        wraplength=400
+                    )
+                    msg_label.pack(pady=10)
+                    
+                    ok_btn = tk.Button(
+                        dialog,
+                        text="I UNDERSTAND - CLOSE WEBSITE",
+                        font=("Arial", 14, "bold"),
+                        bg="red",
+                        fg="white",
+                        command=dialog.destroy
+                    )
+                    ok_btn.pack(pady=20)
+                    
+                    # Make it pop to front
+                    dialog.lift()
+                    dialog.attributes('-topmost', True)
+                    dialog.mainloop()
+                else:
+                    # Normal notification - simple dialog
+                    dialog = tk.Toplevel(root)
+                    dialog.title("PayGuard")
+                    dialog.geometry("350x150")
+                    dialog.configure(bg="white")
+                    
+                    label = tk.Label(
+                        dialog,
+                        text=simple_message,
+                        font=("Arial", 12),
+                        bg="white",
+                        wraplength=300
+                    )
+                    label.pack(pady=30, padx=20)
+                    
+                    ok_btn = tk.Button(
+                        dialog,
+                        text="OK",
+                        font=("Arial", 12),
+                        command=dialog.destroy
+                    )
+                    ok_btn.pack(pady=10)
+                    
+                    dialog.lift()
+                    dialog.attributes('-topmost', True)
+                    dialog.mainloop()
+            
+            # Run in thread to not block
+            threading.Thread(target=show_dialog, daemon=True).start()
+            return
+        
+        # Fallback: platform-specific
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.Popen([
                 "osascript", "-e",
-                f'display notification "{simple_message}" with title "{simple_title}"'
-            ], capture_output=True)
-        elif platform.system() == "Windows":
-            from win10toast import ToastNotifier
-            toaster = ToastNotifier()
-            toaster.show_toast(simple_title, simple_message, duration=5)
+                f'display dialog "{simple_message}" with title "{simple_title}" buttons {{"OK"}} default button "OK" with icon stop'
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif system == "Windows":
+            try:
+                from win10toast import ToastNotifier
+                toaster = ToastNotifier()
+                toaster.show_toast(simple_title, simple_message, duration=10, threaded=True)
+            except ImportError:
+                subprocess.Popen([
+                    "powershell", "-Command",
+                    f'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("{simple_message}", "{simple_title}", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)'
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            subprocess.run(["notify-send", simple_title, simple_message], capture_output=True)
+            # Linux - use tkinter or zenity
+            try:
+                subprocess.Popen(["zenity", "--warning", "--text=" + simple_message, "--title=" + simple_title], 
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except FileNotFoundError:
+                logger.warning("No dialog available on Linux - install zenity")
     except Exception as e:
-        logger.error(f"Notification error: {e}")
+        logger.error(f"Dialog error: {e}")
 
 
 def main():
     """Main entry point"""
-    logger.info(f"PayGuard starting on {platform.system()}...")
+    logger.info(f"PayGuard starting on {SYSTEM}...")
     
-    # Check dependencies
+    # Check critical dependencies
     if not HAS_PYTRAY:
         logger.error("pystray not installed. Run: pip install pystray Pillow")
         sys.exit(1)
+    
+    # Show available features
+    logger.info(f"Features: PIL={HAS_PIL}, pystray={HAS_PYTRAY}, pyperclip={HAS_PYPERCLIP}, mss={HAS_MSS}, tkinter={HAS_TKINTER}")
     
     # Create app
     app = PayGuardApp()
