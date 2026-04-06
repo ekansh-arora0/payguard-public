@@ -41,15 +41,36 @@ fi
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "✓ Python $PYTHON_VERSION detected"
 
-# Clone repo (from public repo)
+# Clone repo (from public repo - uses GitHub CLI or disables git prompt)
 INSTALL_DIR="$HOME/.payguard"
 if [ -d "$INSTALL_DIR/payguard" ]; then
     echo "📦 Updating existing installation..."
-    cd "$INSTALL_DIR/payguard" && git pull origin main 2>/dev/null || true
+    cd "$INSTALL_DIR/payguard" && GIT_TERMINAL_PROMPT=0 git pull origin main 2>/dev/null || true
 else
     echo "📥 Downloading PayGuard..."
     mkdir -p "$INSTALL_DIR"
-    git clone --depth 1 https://github.com/ekansh-arora0/payguard-public.git "$INSTALL_DIR/payguard"
+    
+    # Try GitHub CLI first (no auth), then git with prompt disabled, then curl fallback
+    if command -v gh &>/dev/null; then
+        gh repo clone ekansh-arora0/payguard-public "$INSTALL_DIR/payguard" 2>/dev/null || {
+            echo "   gh clone failed, trying git..."
+            GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/ekansh-arora0/payguard-public.git "$INSTALL_DIR/payguard" 2>/dev/null || {
+                echo "   git clone failed, using curl download..."
+                curl -fsSL https://github.com/ekansh-arora0/payguard-public/archive/refs/heads/main.zip -o /tmp/payguard.zip
+                unzip -q /tmp/payguard.zip -d "$INSTALL_DIR"
+                mv "$INSTALL_DIR/payguard-public-main" "$INSTALL_DIR/payguard"
+                rm /tmp/payguard.zip
+            }
+        }
+    else
+        GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/ekansh-arora0/payguard-public.git "$INSTALL_DIR/payguard" 2>/dev/null || {
+            echo "   git clone failed, using curl download..."
+            curl -fsSL https://github.com/ekansh-arora0/payguard-public/archive/refs/heads/main.zip -o /tmp/payguard.zip
+            unzip -q /tmp/payguard.zip -d "$INSTALL_DIR"
+            mv "$INSTALL_DIR/payguard-public-main" "$INSTALL_DIR/payguard"
+            rm /tmp/payguard.zip
+        }
+    fi
 fi
 
 cd "$INSTALL_DIR/payguard"
