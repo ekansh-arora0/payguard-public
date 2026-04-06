@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-PayGuard - Simple Cross-Platform Phishing & Scam Detection
+PayGuard - Simple Phishing & Scam Detection
 Works on macOS and Linux
+Always scanning - no clicking needed
 """
 
 import os
@@ -20,7 +21,7 @@ LOG_DIR = os.path.expanduser("~/payguard_logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(message)s',
     handlers=[
         logging.FileHandler(f"{LOG_DIR}/payguard.log"),
@@ -40,105 +41,97 @@ try:
     HAS_TKINTER = True
 except ImportError:
     HAS_TKINTER = False
-    logger.warning("tkinter not available for dialogs")
 
 
 class PayGuardApp:
     def __init__(self):
-        self.protection_enabled = True
         self.scans_performed = 0
         self.threats_detected = 0
-        self.monitoring_active = False
-        self.monitor_thread = None
-        self.last_alert_time = 0
-        self.alert_cooldown = 10
         self.screen_capture_works = False
+        self.running = True
         
         logger.info("=== PayGuard started ===")
         self._test_screen_capture()
+        
+        # Always start scanning
+        self._start_scan_loop()
     
     def _test_screen_capture(self):
-        """Test if screen capture works at startup"""
-        result = self._capture_single()
-        if result:
-            self.screen_capture_works = True
-            logger.info("Screen capture works!")
-        else:
-            logger.warning("Screen capture NOT available - running in passive mode")
-    
-    def _capture_single(self):
-        """Try to capture screen - returns image data or None"""
-        
-        # macOS
-        if SYSTEM == "Darwin":
-            try:
+        """Test if screen capture works"""
+        try:
+            # macOS
+            if SYSTEM == "Darwin":
                 subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
                               capture_output=True, timeout=10)
                 if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                    with open("/tmp/pg_screen.png", "rb") as f:
-                        return f.read()
+                    self.screen_capture_works = True
+                    logger.info("Screen capture: OK")
+                    return
+            
+            # Linux - try mss
+            try:
+                import mss
+                with mss.mss() as sct:
+                    sct.grab(sct.monitors[1])
+                self.screen_capture_works = True
+                logger.info("Screen capture: OK (mss)")
+                return
             except:
                 pass
+            
+            # Linux - scrot
+            try:
+                subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
+                if os.path.exists("/tmp/pg_screen.png"):
+                    self.screen_capture_works = True
+                    logger.info("Screen capture: OK (scrot)")
+                    return
+            except:
+                pass
+                
+        except Exception as e:
+            logger.info(f"Screen capture test: {e}")
         
-        # Linux - try mss first (works in most cases)
-        try:
-            import mss
-            with mss.mss() as sct:
-                sct_img = sct.grab(sct.monitors[1])
-                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                return buf.getvalue()
-        except:
-            pass
+        logger.warning("Screen capture NOT available")
+    
+    def _capture(self):
+        if not self.screen_capture_works:
+            return None
         
-        # Linux - scrot
         try:
-            subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
-            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                with open("/tmp/pg_screen.png", "rb") as f:
-                    return f.read()
-        except:
-            pass
-        
-        # Linux - gnome-screenshot
-        try:
-            subprocess.run(["gnome-screenshot", "-f", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
-            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                with open("/tmp/pg_screen.png", "rb") as f:
-                    return f.read()
+            if SYSTEM == "Darwin":
+                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
+                              capture_output=True, timeout=10)
+                if os.path.exists("/tmp/pg_screen.png"):
+                    with open("/tmp/pg_screen.png", "rb") as f:
+                        return f.read()
+            else:
+                try:
+                    import mss
+                    with mss.mss() as sct:
+                        sct_img = sct.grab(sct.monitors[1])
+                        img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                        buf = io.BytesIO()
+                        img.save(buf, format='PNG')
+                        return buf.getvalue()
+                except:
+                    pass
+                
+                try:
+                    subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
+                    if os.path.exists("/tmp/pg_screen.png"):
+                        with open("/tmp/pg_screen.png", "rb") as f:
+                            return f.read()
+                except:
+                    pass
         except:
             pass
         
         return None
     
-    def start_monitoring(self):
-        if self.monitoring_active:
-            return
-        self.monitoring_active = True
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self.monitor_thread.start()
-        logger.info("Monitoring ON")
-    
-    def stop_monitoring(self):
-        self.monitoring_active = False
-        if self.monitor_thread:
-            self.monitor_thread.join(timeout=2)
-        logger.info("Monitoring OFF")
-    
-    def _monitor_loop(self):
-        while self.monitoring_active:
-            try:
-                if self.protection_enabled:
-                    self.scan_screen()
-                time.sleep(3)
-            except Exception as e:
-                logger.error(f"Monitor error: {e}")
-                time.sleep(5)
-    
-    def analyze_screen(self, image_data):
+    def _analyze(self, image_data):
         if not image_data:
-            return {"is_scam": False}
+            return None
         
         try:
             img = Image.open(io.BytesIO(image_data))
@@ -146,7 +139,7 @@ class PayGuardApp:
             colors = img.convert("RGB").getcolors(maxcolors=100000)
             
             if not colors:
-                return {"is_scam": False}
+                return None
             
             total = sum(count for count, _ in colors)
             
@@ -157,146 +150,105 @@ class PayGuardApp:
             orange_ratio = orange_count / total if total > 0 else 0
             
             if red_ratio > 0.15:
-                return {"is_scam": True, "confidence": 75, "reason": "Red warning screen"}
+                return "Red warning screen detected"
             if orange_ratio > 0.15:
-                return {"is_scam": True, "confidence": 60, "reason": "Orange warning screen"}
+                return "Orange warning screen detected"
             
-        except Exception as e:
-            logger.error(f"Analysis error: {e}")
+        except:
+            pass
         
-        return {"is_scam": False}
+        return None
     
-    def scan_screen(self):
-        if not self.screen_capture_works:
-            return
+    def _start_scan_loop(self):
+        """Background scan loop"""
+        def loop():
+            while self.running:
+                try:
+                    img_data = self._capture()
+                    if img_data:
+                        threat = self._analyze(img_data)
+                        if threat:
+                            self.threats_detected += 1
+                            self._show_alert(threat)
+                            logger.warning(f"THREAT: {threat}")
+                    self.scans_performed += 1
+                except Exception as e:
+                    logger.error(f"Scan error: {e}")
+                time.sleep(3)
         
-        image_data = self._capture_single()
-        if not image_data:
-            return
-        
-        result = self.analyze_screen(image_data)
-        self.scans_performed += 1
-        
-        if result.get("is_scam"):
-            self.threats_detected += 1
-            now = time.time()
-            if now - self.last_alert_time > self.alert_cooldown:
-                self.last_alert_time = now
-                self.show_alert(result.get("reason", "Scam detected!"))
-                logger.warning(f"THREAT DETECTED: {result.get('reason')}")
+        threading.Thread(target=loop, daemon=True).start()
+        logger.info("Scanning started")
     
-    def show_alert(self, message):
+    def _show_alert(self, message):
         if not HAS_TKINTER:
             logger.warning(f"ALERT: {message}")
             return
         
-        def show_dialog():
-            root = tk.Tk()
-            root.withdraw()
+        try:
+            def show_dialog():
+                root = tk.Tk()
+                root.withdraw()
+                
+                dialog = tk.Toplevel(root)
+                dialog.title("PayGuard Alert")
+                dialog.geometry("450x180")
+                dialog.configure(bg="#ffcccc")
+                
+                tk.Label(dialog, text="WARNING: SCAM DETECTED!",
+                        font=("Arial", 16, "bold"), fg="red", bg="#ffcccc").pack(pady=15)
+                tk.Label(dialog, text=message,
+                        font=("Arial", 12), bg="#ffcccc", wraplength=400).pack(pady=10)
+                tk.Button(dialog, text="I UNDERSTAND - CLOSE WEBSITE",
+                         font=("Arial", 12, "bold"), bg="red", fg="white",
+                         command=dialog.destroy).pack(pady=20)
+                
+                dialog.lift()
+                dialog.attributes('-topmost', True)
+                dialog.mainloop()
             
-            dialog = tk.Toplevel(root)
-            dialog.title("PayGuard Alert")
-            dialog.geometry("450x180")
-            dialog.configure(bg="#ffcccc")
-            
-            warn_label = tk.Label(
-                dialog, 
-                text="WARNING: SCAM DETECTED!",
-                font=("Arial", 16, "bold"),
-                fg="red",
-                bg="#ffcccc"
-            )
-            warn_label.pack(pady=15)
-            
-            msg_label = tk.Label(
-                dialog,
-                text=message,
-                font=("Arial", 12),
-                bg="#ffcccc",
-                wraplength=400
-            )
-            msg_label.pack(pady=10)
-            
-            ok_btn = tk.Button(
-                dialog,
-                text="I UNDERSTAND - CLOSE WEBSITE",
-                font=("Arial", 12, "bold"),
-                bg="red",
-                fg="white",
-                command=dialog.destroy
-            )
-            ok_btn.pack(pady=20)
-            
-            dialog.lift()
-            dialog.attributes('-topmost', True)
-            dialog.mainloop()
-        
-        threading.Thread(target=show_dialog, daemon=True).start()
+            threading.Thread(target=show_dialog, daemon=True).start()
+        except:
+            pass
 
 
-def create_icon(green=True):
+def create_icon():
+    """Green shield icon"""
     size = 64
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    
     from PIL import ImageDraw
     draw = ImageDraw.Draw(img)
-    
-    color = (0, 180, 0, 255) if green else (200, 0, 0, 255)
     draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
-                 fill=color, outline=(255, 255, 255, 255), width=2)
-    
+                 fill=(0, 180, 0, 255), outline=(255, 255, 255, 255), width=2)
     return img
 
 
 def create_menu(app):
     from pystray import MenuItem as Item
     
-    def toggle_protection(icon, item):
-        app.protection_enabled = not app.protection_enabled
-        if app.protection_enabled:
-            app.start_monitoring()
-            icon.image = create_icon(green=True)
-        else:
-            app.stop_monitoring()
-            icon.image = create_icon(green=False)
-    
-    def scan_now(icon, item):
-        app.scan_screen()
-    
     def quit_click(icon, item):
-        app.stop_monitoring()
+        app.running = False
         icon.stop()
     
-    status = "ON" if app.protection_enabled else "OFF"
-    capture_status = "OK" if app.screen_capture_works else "N/A"
+    scan_status = f"Scans: {app.scans_performed}, Threats: {app.threats_detected}"
     
     return (
-        Item(f"Status: {status}", lambda icon, item: None),
-        Item(f"Screen: {capture_status}", lambda icon, item: None),
-        Item("Toggle ON/OFF", toggle_protection),
-        Item("Scan Now", scan_now),
+        Item("PayGuard - Always Scanning", lambda icon, item: None),
+        Item(scan_status, lambda icon, item: None),
         Item("Quit", quit_click),
     )
 
 
 def main():
-    logger.info(f"PayGuard starting on {SYSTEM}...")
+    logger.info(f"PayGuard running on {SYSTEM}")
     
     app = PayGuardApp()
-    app.start_monitoring()
     
-    icon_image = create_icon(green=True)
-    icon = pystray.Icon(
-        "payguard",
-        icon_image,
-        "PayGuard",
-        create_menu(app)
-    )
+    icon = pystray.Icon("payguard", create_icon(), "PayGuard", create_menu(app))
     
-    logger.info("PayGuard ready! Shield icon should appear.")
+    logger.info("Shield icon ready!")
     try:
         icon.run()
-    except KeyboardInterrupt:
+    except:
         logger.info("PayGuard stopped")
 
 

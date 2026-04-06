@@ -1,65 +1,15 @@
 #!/bin/bash
-# PayGuard Simple Installer - macOS and Linux
+# PayGuard Installer
 
-echo "=========================================="
-echo "  Welcome to PayGuard Setup"
-echo "  Protecting you from scams"
-echo "=========================================="
-echo ""
-
-OS="$(uname -s)"
-echo "Detected: $OS"
-echo ""
-
-if ! command -v python3 &>/dev/null; then
-    echo "Python is not installed."
-    echo "Please install Python from python.org"
-    exit 1
-fi
-
-echo "Python found!"
-echo ""
 echo "Installing PayGuard..."
-echo ""
 
 pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
 
-# Linux: install screenshot tools
-if [[ "$OS" == "Linux" ]]; then
-    echo "Installing screenshot tools for Linux..."
-    if command -v apt-get &>/dev/null; then
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq scrot gnome-screenshot 2>/dev/null || true
-    elif command -v dnf &>/dev/null; then
-        sudo dnf install -y scrot 2>/dev/null || true
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm scrot 2>/dev/null || true
-    fi
-fi
+mkdir -p "$HOME/.payguard"
 
-INSTALL_DIR="$HOME/.payguard"
-mkdir -p "$INSTALL_DIR"
+curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_crossplatform.py -o "$HOME/.payguard/payguard.py"
 
-echo "Downloading PayGuard..."
-curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_crossplatform.py -o "$INSTALL_DIR/payguard.py"
-
-cat > "$HOME/run_payguard.sh" << 'EOF'
-#!/bin/bash
+echo "Starting PayGuard..."
 cd "$HOME/.payguard"
-python3 payguard.py
-EOF
-chmod +x "$HOME/run_payguard.sh"
-
-echo ""
-echo "PayGuard installed!"
-echo ""
-echo "Starting PayGuard now..."
-echo ""
-echo "You should see a shield icon in your menu bar or system tray."
-echo ""
-
-cd "$INSTALL_DIR"
 python3 payguard.py &
-
-echo ""
-echo "PayGuard is now running!"
+echo "Done! Shield icon should appear."
