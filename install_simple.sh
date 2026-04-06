@@ -1,6 +1,5 @@
 #!/bin/bash
 # PayGuard Simple Installer - One Command for All Platforms
-# Designed for seniors - simple questions, big buttons
 
 echo "=========================================="
 echo "  Welcome to PayGuard Setup"
@@ -8,7 +7,6 @@ echo "  Protecting you from scams"
 echo "=========================================="
 echo ""
 
-# Detect platform
 OS="$(uname -s)"
 if [ "$OS" = "Darwin" ]; then
     PLATFORM="mac"
@@ -23,7 +21,6 @@ fi
 echo "Detected: $PLATFORM"
 echo ""
 
-# Step 1: Check/install Python
 if ! command -v python3 &>/dev/null; then
     echo "Python is not installed."
     echo ""
@@ -47,42 +44,35 @@ fi
 echo "Python found!"
 echo ""
 
-# Step 2: Install required packages
 echo "Installing PayGuard..."
 echo ""
 
-pip3 install --user pystray Pillow mss pyperclip 2>/dev/null || pip3 install pystray Pillow mss pyperclip 2>/dev/null || true
+pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
 
-# Step 3: Create the app directory
 INSTALL_DIR="$HOME/.payguard"
 mkdir -p "$INSTALL_DIR"
 
-# Download the cross-platform app directly
 echo "Downloading PayGuard..."
-curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_crossplatform.py -o "$INSTALL_DIR/payguard_crossplatform.py"
+curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_crossplatform.py -o "$INSTALL_DIR/payguard.py"
 
-# Step 4: Create launcher
 cat > "$HOME/run_payguard.sh" << 'EOF'
 #!/bin/bash
 cd "$HOME/.payguard"
-python3 payguard_crossplatform.py
+python3 payguard.py
 EOF
 chmod +x "$HOME/run_payguard.sh"
 
+echo ""
 echo "PayGuard installed!"
 echo ""
-
-# Step 5: Start the app
 echo "Starting PayGuard now..."
 echo ""
-echo "You should see a shield icon in your menu bar."
+echo "You should see a shield icon in your menu bar or system tray."
 echo "Click it to turn protection ON or OFF."
 echo ""
 
-# Run the app
 cd "$INSTALL_DIR"
-python3 payguard_crossplatform.py &
+python3 payguard.py &
 
 echo ""
 echo "PayGuard is now running!"
-echo "A shield icon should appear in your system tray."
