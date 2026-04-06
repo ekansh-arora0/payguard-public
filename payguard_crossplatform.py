@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 PayGuard - Cross-Platform Phishing & Scam Detection
-Scans every 3 seconds, shows shield in menu bar
 """
 
 import os
@@ -42,52 +41,6 @@ try:
     HAS_TKINTER = True
 except ImportError:
     HAS_TKINTER = False
-
-
-def load_icon():
-    """Load the actual PayGuard icon from extension icons"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Try to find the icon in various locations
-    possible_paths = [
-        os.path.join(script_dir, "extension", "icons", "icon128.png"),
-        os.path.join(script_dir, "..", "extension", "icons", "icon128.png"),
-        "/Applications/PayGuard.app/Contents/Resources/icon.png",
-    ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
-            try:
-                img = Image.open(path)
-                # Resize to 64x64 for tray
-                img = img.resize((64, 64), Image.LANCZOS)
-                return img.convert("RGBA")
-            except:
-                pass
-    
-    # Fallback: create a proper shield icon
-    return create_shield_icon()
-
-
-def create_shield_icon():
-    """Create a proper shield icon like the extension"""
-    size = 64
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    
-    from PIL import ImageDraw
-    draw = ImageDraw.Draw(img)
-    
-    # Background circle (blue/purple like the extension)
-    draw.ellipse([2, 2, 62, 62], fill=(102, 126, 234, 255))
-    
-    # Shield shape (white)
-    draw.polygon([(32, 10), (54, 19), (54, 38), (32, 54), (10, 38), (10, 19)], 
-                 fill=(255, 255, 255, 230))
-    
-    # Checkmark (blue)
-    draw.line([(24, 32), (30, 38), (42, 26)], fill=(102, 126, 234, 255), width=3)
-    
-    return img
 
 
 class PayGuardApp:
@@ -253,11 +206,22 @@ class PayGuardApp:
             pass
 
 
+def create_icon(enabled=True):
+    """Create tray icon - EXACT copy from payguard_unified.py"""
+    from PIL import ImageDraw
+    size = 64
+    img = Image.new('RGB', (size, size), color='black')
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([8, 8, 56, 56], fill='#10b981' if enabled else '#6b7280')
+    return img
+
+
 def create_menu(app):
     from pystray import MenuItem as Item
     
     def toggle(icon, item):
         app.enabled = not app.enabled
+        icon.image = create_icon(enabled=app.enabled)
         logger.info(f"Protection {'ON' if app.enabled else 'OFF'}")
     
     def quit_click(icon, item):
@@ -278,13 +242,12 @@ def main():
     
     app = PayGuardApp()
     
-    # Try to load the real icon
-    try:
-        icon_image = load_icon()
-    except:
-        icon_image = create_shield_icon()
-    
-    icon = pystray.Icon("payguard", icon_image, "PayGuard", create_menu(app))
+    icon = pystray.Icon(
+        "payguard",
+        create_icon(enabled=app.enabled),
+        "PayGuard",
+        create_menu(app)
+    )
     
     logger.info("Shield icon ready!")
     try:
