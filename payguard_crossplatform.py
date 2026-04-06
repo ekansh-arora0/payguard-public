@@ -44,9 +44,55 @@ except ImportError:
     HAS_TKINTER = False
 
 
+def load_icon():
+    """Load the actual PayGuard icon from extension icons"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Try to find the icon in various locations
+    possible_paths = [
+        os.path.join(script_dir, "extension", "icons", "icon128.png"),
+        os.path.join(script_dir, "..", "extension", "icons", "icon128.png"),
+        "/Applications/PayGuard.app/Contents/Resources/icon.png",
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                img = Image.open(path)
+                # Resize to 64x64 for tray
+                img = img.resize((64, 64), Image.LANCZOS)
+                return img.convert("RGBA")
+            except:
+                pass
+    
+    # Fallback: create a proper shield icon
+    return create_shield_icon()
+
+
+def create_shield_icon():
+    """Create a proper shield icon like the extension"""
+    size = 64
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(img)
+    
+    # Background circle (blue/purple like the extension)
+    draw.ellipse([2, 2, 62, 62], fill=(102, 126, 234, 255))
+    
+    # Shield shape (white)
+    draw.polygon([(32, 10), (54, 19), (54, 38), (32, 54), (10, 38), (10, 19)], 
+                 fill=(255, 255, 255, 230))
+    
+    # Checkmark (blue)
+    draw.line([(24, 32), (30, 38), (42, 26)], fill=(102, 126, 234, 255), width=3)
+    
+    return img
+
+
 class PayGuardApp:
     def __init__(self):
-        self.enabled = True  # ON by default
+        self.enabled = True
         self.scans_performed = 0
         self.threats_detected = 0
         self.running = True
@@ -57,22 +103,17 @@ class PayGuardApp:
         self._start_scan_loop()
     
     def capture_screen(self):
-        """Capture screen"""
-        
         if IS_MAC:
             return self._capture_screen_mac()
         elif IS_LINUX:
             return self._capture_screen_linux()
         elif IS_WINDOWS:
             return self._capture_screen_windows()
-        
         return None
     
     def _capture_screen_mac(self):
-        """Capture screen on macOS"""
         try:
             import Quartz
-            
             image = Quartz.CGWindowListCreateImage(
                 Quartz.CGRectInfinite,
                 Quartz.kCGWindowListOptionOnScreenOnly,
@@ -87,16 +128,11 @@ class PayGuardApp:
             bytesperrow = Quartz.CGImageGetBytesPerRow(image)
             pixeldata = Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(image))
             
-            img = Image.frombytes('RGBA', (width, height), pixeldata, 'raw', 'BGRA', bytesperrow, 1)
-            return img
-            
-        except ImportError:
-            return self._capture_screen_subprocess()
-        except Exception:
+            return Image.frombytes('RGBA', (width, height), pixeldata, 'raw', 'BGRA', bytesperrow, 1)
+        except:
             return self._capture_screen_subprocess()
     
     def _capture_screen_subprocess(self):
-        """Fallback: macOS screencapture"""
         try:
             subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
                           capture_output=True, timeout=10)
@@ -110,52 +146,33 @@ class PayGuardApp:
         return None
     
     def _capture_screen_linux(self):
-        """Capture screen on Linux - DON'T flash the screen"""
-        # Use mss with proper settings to avoid display issues
         try:
             import mss
-            import threading
-            
-            # Lock to prevent capture issues
-            with threading.Lock():
-                with mss.mss() as sct:
-                    # Capture monitor 1 (primary)
-                    monitor = sct.monitors[1]
-                    screenshot = sct.grab(monitor)
-                    # Convert without displaying
-                    img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
-                    return img
-        except ImportError:
+            with mss.mss() as sct:
+                screenshot = sct.grab(sct.monitors[1])
+                return Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+        except:
             pass
-        except Exception as e:
-            logger.debug(f"mss error: {e}")
-        
         return None
     
     def _capture_screen_windows(self):
-        """Capture screen on Windows"""
         try:
             import mss
-            
             with mss.mss() as sct:
-                monitor = sct.monitors[1]
-                screenshot = sct.grab(monitor)
-                img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
-                return img
+                screenshot = sct.grab(sct.monitors[1])
+                return Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
         except:
             pass
         return None
     
     def analyze_screen(self, image_data):
-        """Analyze screen for scam indicators"""
         if not image_data:
             return None
         
         try:
-            if isinstance(image_data, bytes):
-                img = Image.open(io.BytesIO(image_data))
-            else:
-                img = image_data
+            img = image_data
+            if isinstance(img, bytes):
+                img = Image.open(io.BytesIO(img))
             
             img.thumbnail((200, 200))
             colors = img.convert("RGB").getcolors(maxcolors=50000)
@@ -182,7 +199,6 @@ class PayGuardApp:
         return None
     
     def _start_scan_loop(self):
-        """Background scan loop - every 3 seconds"""
         def loop():
             while self.running:
                 try:
@@ -200,7 +216,7 @@ class PayGuardApp:
                         self.scans_performed += 1
                 except Exception as e:
                     logger.error(f"Scan error: {e}")
-                time.sleep(3)  # Scan every 3 seconds
+                time.sleep(3)
         
         threading.Thread(target=loop, daemon=True).start()
         logger.info("Scanning every 3 seconds")
@@ -237,23 +253,11 @@ class PayGuardApp:
             pass
 
 
-def create_icon(green=True):
-    size = 64
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    from PIL import ImageDraw
-    draw = ImageDraw.Draw(img)
-    color = (0, 180, 0, 255) if green else (200, 0, 0, 255)
-    draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
-                 fill=color, outline=(255, 255, 255, 255), width=2)
-    return img
-
-
 def create_menu(app):
     from pystray import MenuItem as Item
     
     def toggle(icon, item):
         app.enabled = not app.enabled
-        icon.image = create_icon(green=app.enabled)
         logger.info(f"Protection {'ON' if app.enabled else 'OFF'}")
     
     def quit_click(icon, item):
@@ -274,7 +278,13 @@ def main():
     
     app = PayGuardApp()
     
-    icon = pystray.Icon("payguard", create_icon(green=True), "PayGuard", create_menu(app))
+    # Try to load the real icon
+    try:
+        icon_image = load_icon()
+    except:
+        icon_image = create_shield_icon()
+    
+    icon = pystray.Icon("payguard", icon_image, "PayGuard", create_menu(app))
     
     logger.info("Shield icon ready!")
     try:
