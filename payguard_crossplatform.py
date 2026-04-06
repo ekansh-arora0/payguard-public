@@ -2,7 +2,7 @@
 """
 PayGuard - Simple Cross-Platform Phishing & Scam Detection
 Works on Windows, macOS, and Linux
-Only scans screen for visual scam indicators - no clipboard, no backend
+Only scans screen for visual scam indicators
 """
 
 import os
@@ -13,7 +13,6 @@ import platform
 import logging
 import subprocess
 import io
-import re
 from PIL import Image, ImageDraw
 
 SYSTEM = platform.system()
@@ -56,12 +55,6 @@ except ImportError:
     HAS_TKINTER = False
     logger.warning("tkinter not available for dialogs")
 
-SCAM_PATTERNS = [
-    (re.compile(r'(?i)\b(urgent|immediate|act now|call now)\b'), 'urgency', 25),
-    (re.compile(r'(?i)\b(virus|infected|malware|trojan)\b'), 'virus_warning', 35),
-    re.compile(r'\b1-\d{3}-\d{3}-\d{4}\b'),  # Phone number
-]
-
 
 class PayGuardApp:
     def __init__(self):
@@ -101,21 +94,27 @@ class PayGuardApp:
     
     def capture_screen(self):
         if HAS_MSS:
-            with mss.mss() as sct:
-                sct_img = sct.grab(sct.monitors[1])
-                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                return buf.getvalue()
+            try:
+                with mss.mss() as sct:
+                    sct_img = sct.grab(sct.monitors[1])
+                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    return buf.getvalue()
+            except Exception as e:
+                logger.error(f"mss capture failed: {e}")
         
         if SYSTEM == "Darwin":
-            result = subprocess.run(
-                ["screencapture", "-x", "/tmp/payguard_screen.png"],
-                capture_output=True, timeout=10
-            )
-            if result.returncode == 0:
-                with open("/tmp/payguard_screen.png", "rb") as f:
-                    return f.read()
+            try:
+                result = subprocess.run(
+                    ["screencapture", "-x", "/tmp/payguard_screen.png"],
+                    capture_output=True, timeout=10
+                )
+                if result.returncode == 0:
+                    with open("/tmp/payguard_screen.png", "rb") as f:
+                        return f.read()
+            except Exception as e:
+                logger.error(f"screencapture failed: {e}")
         
         return None
     
@@ -214,16 +213,44 @@ class PayGuardApp:
         threading.Thread(target=show_dialog, daemon=True).start()
 
 
-def create_icon(green=True):
-    size = (64, 64)
-    color = (40, 167, 69) if green else (220, 53, 69)
-    img = Image.new('RGB', size, color)
+def load_icon():
+    """Load shield icon - try multiple sources"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    icon_paths = [
+        os.path.join(script_dir, "icon.png"),
+        os.path.join(script_dir, "..", "extension", "icons", "icon128.png"),
+        os.path.join(script_dir, "extension", "icons", "icon128.png"),
+    ]
+    
+    for path in icon_paths:
+        if os.path.exists(path):
+            try:
+                img = Image.open(path)
+                return img.convert("RGBA")
+            except:
+                pass
+    
+    return create_icon_fallback()
+
+
+def create_icon_fallback():
+    """Create a simple shield icon"""
+    size = 64
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.polygon([(32, 8), (56, 20), (56, 40), (32, 58), (8, 40), (8, 20)], 
-                 outline='white', width=3)
-    draw.line([(32, 18), (32, 40)], fill='white', width=3)
-    draw.line([(22, 28), (32, 38), (42, 28)], fill='white', width=2)
+    
+    draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
+                 fill=(0, 150, 0, 255), outline=(255, 255, 255, 255), width=2)
+    draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
+                 fill=(0, 180, 0, 255))
+    
     return img
+
+
+def create_icon(green=True):
+    """Create tray icon - green or red shield"""
+    return create_icon_fallback()
 
 
 def create_menu(app):
