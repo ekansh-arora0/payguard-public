@@ -52,8 +52,65 @@ class PayGuardApp:
         self.monitor_thread = None
         self.last_alert_time = 0
         self.alert_cooldown = 10
+        self.screen_capture_works = False
         
         logger.info("=== PayGuard started ===")
+        self._test_screen_capture()
+    
+    def _test_screen_capture(self):
+        """Test if screen capture works at startup"""
+        result = self._capture_single()
+        if result:
+            self.screen_capture_works = True
+            logger.info("Screen capture works!")
+        else:
+            logger.warning("Screen capture NOT available - running in passive mode")
+    
+    def _capture_single(self):
+        """Try to capture screen - returns image data or None"""
+        
+        # macOS
+        if SYSTEM == "Darwin":
+            try:
+                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
+                              capture_output=True, timeout=10)
+                if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                    with open("/tmp/pg_screen.png", "rb") as f:
+                        return f.read()
+            except:
+                pass
+        
+        # Linux - try mss first (works in most cases)
+        try:
+            import mss
+            with mss.mss() as sct:
+                sct_img = sct.grab(sct.monitors[1])
+                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                return buf.getvalue()
+        except:
+            pass
+        
+        # Linux - scrot
+        try:
+            subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                with open("/tmp/pg_screen.png", "rb") as f:
+                    return f.read()
+        except:
+            pass
+        
+        # Linux - gnome-screenshot
+        try:
+            subprocess.run(["gnome-screenshot", "-f", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                with open("/tmp/pg_screen.png", "rb") as f:
+                    return f.read()
+        except:
+            pass
+        
+        return None
     
     def start_monitoring(self):
         if self.monitoring_active:
@@ -78,74 +135,6 @@ class PayGuardApp:
             except Exception as e:
                 logger.error(f"Monitor error: {e}")
                 time.sleep(5)
-    
-    def capture_screen(self):
-        logger.info(">>> Trying to capture screen...")
-        
-        # Method 1: macOS screencapture
-        if SYSTEM == "Darwin":
-            try:
-                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
-                              capture_output=True, timeout=10)
-                if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                    with open("/tmp/pg_screen.png", "rb") as f:
-                        data = f.read()
-                    logger.info(">>> SUCCESS: screencapture worked!")
-                    return data
-            except Exception as e:
-                logger.info(f">>> screencapture failed: {e}")
-        
-        # Method 2: Linux - try mss (most reliable on Linux)
-        try:
-            import mss
-            with mss.mss() as sct:
-                sct_img = sct.grab(sct.monitors[1])
-                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                logger.info(">>> SUCCESS: mss worked!")
-                return buf.getvalue()
-        except Exception as e:
-            logger.info(f">>> mss failed: {e}")
-        
-        # Method 3: Linux - import (ImageMagick)
-        try:
-            subprocess.run(["import", "-window", "root", "/tmp/pg_screen.png"], 
-                          capture_output=True, timeout=10)
-            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                with open("/tmp/pg_screen.png", "rb") as f:
-                    data = f.read()
-                logger.info(">>> SUCCESS: import worked!")
-                return data
-        except Exception as e:
-            logger.info(f">>> import failed: {e}")
-        
-        # Method 4: Linux - gnome-screenshot
-        try:
-            subprocess.run(["gnome-screenshot", "-f", "/tmp/pg_screen.png"], 
-                          capture_output=True, timeout=10)
-            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                with open("/tmp/pg_screen.png", "rb") as f:
-                    data = f.read()
-                logger.info(">>> SUCCESS: gnome-screenshot worked!")
-                return data
-        except Exception as e:
-            logger.info(f">>> gnome-screenshot failed: {e}")
-        
-        # Method 5: Linux - scrot
-        try:
-            subprocess.run(["scrot", "/tmp/pg_screen.png"], 
-                          capture_output=True, timeout=10)
-            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                with open("/tmp/pg_screen.png", "rb") as f:
-                    data = f.read()
-                logger.info(">>> SUCCESS: scrot worked!")
-                return data
-        except Exception as e:
-            logger.info(f">>> scrot failed: {e}")
-        
-        logger.info(">>> ALL METHODS FAILED")
-        return None
     
     def analyze_screen(self, image_data):
         if not image_data:
@@ -178,7 +167,10 @@ class PayGuardApp:
         return {"is_scam": False}
     
     def scan_screen(self):
-        image_data = self.capture_screen()
+        if not self.screen_capture_works:
+            return
+        
+        image_data = self._capture_single()
         if not image_data:
             return
         
@@ -276,9 +268,11 @@ def create_menu(app):
         icon.stop()
     
     status = "ON" if app.protection_enabled else "OFF"
+    capture_status = "OK" if app.screen_capture_works else "N/A"
     
     return (
         Item(f"Status: {status}", lambda icon, item: None),
+        Item(f"Screen: {capture_status}", lambda icon, item: None),
         Item("Toggle ON/OFF", toggle_protection),
         Item("Scan Now", scan_now),
         Item("Quit", quit_click),

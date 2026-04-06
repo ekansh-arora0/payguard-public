@@ -22,11 +22,19 @@ echo ""
 echo "Installing PayGuard..."
 echo ""
 
+pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
+
+# Linux: install screenshot tools
 if [[ "$OS" == "Linux" ]]; then
-    echo "Installing mss for Linux screen capture..."
-    pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
-else
-    pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
+    echo "Installing screenshot tools for Linux..."
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq scrot gnome-screenshot 2>/dev/null || true
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y scrot 2>/dev/null || true
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm scrot 2>/dev/null || true
+    fi
 fi
 
 INSTALL_DIR="$HOME/.payguard"
