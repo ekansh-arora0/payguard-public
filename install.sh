@@ -84,14 +84,13 @@ PIP_PACKAGES="httpx xgboost numpy scikit-learn Pillow requests joblib"
 # Platform-specific
 if [ "$PLATFORM" = "macOS" ]; then
     PIP_PACKAGES="$PIP_PACKAGES rumps"
-    echo "   Installing: $PIP_PACKAGES (including menu bar)"
+    echo "   Installing: $PIP_PACKAGES (menu bar app)"
 elif [ "$PLATFORM" = "Linux" ]; then
     PIP_PACKAGES="$PIP_PACKAGES pystray"
-    echo "   Installing: $PIP_PACKAGES (Linux system tray)"
-    echo "   Note: Menu bar not available on Linux (rumps is macOS-only)"
+    echo "   Installing: $PIP_PACKAGES (system tray)"
 elif [ "$PLATFORM" = "Windows" ]; then
-    PIP_PACKAGES="$PIP_PACKAGES win10toast pystray"
-    echo "   Installing: $PIP_PACKAGES (system tray + notifications)"
+    PIP_PACKAGES="$PIP_PACKAGES pystray win10toast"
+    echo "   Installing: $PIP_PACKAGES (system tray)"
 fi
 
 pip3 install --user -q $PIP_PACKAGES 2>/dev/null || pip3 install $PIP_PACKAGES 2>/dev/null || true
@@ -142,9 +141,9 @@ echo "  payguard"
 echo ""
 
 if [ "$PLATFORM" = "macOS" ]; then
-    echo "🛡️  Look for the shield icon in your menu bar"
+    echo "🛡️  Shield icon in your menu bar — click to toggle ON/OFF"
 elif [ "$PLATFORM" = "Linux" ]; then
-    echo "🛡️  Runs as CLI tool (menu bar not available on Linux)"
+    echo "🛡️  Click the shield icon in your system tray to reopen"
 elif [ "$PLATFORM" = "Windows" ]; then
-    echo "🛡️  Runs in system tray"
+    echo "🛡️  Click the shield icon in your system tray to reopen"
 fi

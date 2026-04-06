@@ -35,9 +35,15 @@ from urllib.parse import urlparse
 
 try:
     import rumps
+    HAS_RUMPS = True
 except ImportError:
-    print("Missing: pip3 install rumps")
-    sys.exit(1)
+    HAS_RUMPS = False
+
+try:
+    import pystray
+    HAS_PYSTRAY = True
+except ImportError:
+    HAS_PYSTRAY = False
 
 try:
     from PIL import Image
@@ -608,35 +614,105 @@ class PayGuard:
         self._monitor_thread = None
         self._monitor_stop = threading.Event()
 
-        # Menu bar - rumps auto-adds Quit, don't add custom one
-        self.app = rumps.App("PayGuard")
-        self.toggle_item = rumps.MenuItem('OFF', callback=self.toggle)
-        self.app.menu = [self.toggle_item]
+        # Menu bar / system tray
+        self.tray_icon = None
+        if HAS_RUMPS:
+            # macOS: use rumps menu bar
+            self.app = rumps.App("PayGuard")
+            self.toggle_item = rumps.MenuItem('OFF', callback=self.toggle)
+            self.app.menu = [self.toggle_item]
+            self.update_status()
+        elif HAS_PYSTRAY and (IS_LINUX or IS_WINDOWS):
+            # Linux/Windows: use pystray system tray
+            self.app = None
+            self.toggle_item = None
+            self._setup_system_tray()
+        else:
+            # No tray available - CLI mode only
+            self.app = None
+            self.toggle_item = None
+            self.app_title = "🛡️"
+            print("⚠️  No menu bar available. Running in CLI mode.")
+            print("   To reopen: run 'python3 payguard_unified.py' again")
 
-        self.update_status()
         self.start_monitoring()  # Auto-start monitoring since enabled=True at launch
 
     def update_status(self):
-        if self.enabled:
-            self.toggle_item.title = 'ON'
-            self.app.title = "\U0001f6e1\ufe0f"
-        else:
-            self.toggle_item.title = 'OFF'
-            self.app.title = "\u26ab"
+        if HAS_RUMPS:
+            if self.enabled:
+                self.toggle_item.title = 'ON'
+                self.app.title = "\U0001f6e1\ufe0f"
+            else:
+                self.toggle_item.title = 'OFF'
+                self.app.title = "\u26ab"
+        elif HAS_PYSTRAY and self.tray_icon:
+            # Update tray icon based on enabled state
+            self.tray_icon.update_icon(self._create_tray_image())
+            if self.enabled:
+                self.tray_icon.title = "🛡️ PayGuard ON"
+            else:
+                self.tray_icon.title = "🛡️ PayGuard OFF"
 
-    def toggle(self, _):
+    def _create_tray_image(self):
+        """Create a simple tray icon image"""
+        from PIL import Image, ImageDraw
+        size = 64
+        img = Image.new('RGB', (size, size), color='black')
+        draw = ImageDraw.Draw(img)
+        # Draw a simple shield shape
+        draw.ellipse([8, 8, 56, 56], fill='#10b981' if self.enabled else '#6b7280')
+        return img
+
+    def _setup_system_tray(self):
+        """Setup system tray for Linux/Windows"""
+        try:
+            self.tray_icon = pystray.Icon(
+                "payguard",
+                self._create_tray_image(),
+                "PayGuard",
+                menu=pystray.Menu(
+                    pystray.MenuItem("Show", self._show_window),
+                    pystray.MenuItem("ON/OFF", self.toggle),
+                    pystray.MenuItem("Quit", self.quit_app)
+                )
+            )
+            self.tray_icon.title = "🛡️ PayGuard ON"
+        except Exception as e:
+            logger.warning(f"System tray setup failed: {e}")
+            self.tray_icon = None
+
+    def _show_window(self):
+        """Show window - placeholder for tray click"""
+        logger.info("PayGuard is running in background")
+
+    def quit_app(self):
+        """Quit the application"""
+        self.enabled = False
+        self.stop_monitoring()
+        if self.tray_icon:
+            self.tray_icon.stop()
+        logger.info("PayGuard stopped")
+        sys.exit(0)
+
+    def toggle(self, _=None):
+        if HAS_RUMPS:
+            pass  # rumps handles toggle via callback
+        elif self.tray_icon:
+            self.enabled = not self.enabled
+            self.update_status()
+            if self.enabled:
+                self.start_monitoring()
+            else:
+                self.stop_monitoring()
+            return
+
         self.enabled = not self.enabled
         self.update_status()
-
-        if self.enabled:
-            self.start_monitoring()
-        else:
-            self.stop_monitoring()
 
     # ============= Popup Dialog Alerts =============
 
     def notify(self, title, message, critical=False, force=False):
-        """Show popup dialog alert with sound"""
+        """Show notification - logs by default, popups only if explicitly enabled"""
         now = time.time()
         if not force and now - self.last_alert_time < 10:
             logger.info(f"Alert suppressed (cooldown): {title}")
@@ -644,7 +720,18 @@ class PayGuard:
 
         self.last_alert_time = now
 
-        # Plain-language dialog body — no percentages or technical jargon.
+        # Check if notifications are enabled (default: off for privacy/simplicity)
+        NOTIFICATIONS_ENABLED = os.environ.get("PAYGUARD_NOTIFICATIONS", "false").lower() == "true"
+
+        # Always log the threat
+        self.threats_found += 1
+        logger.info(f"THREAT #{self.threats_found}: {title} - {message}")
+
+        # Only show popups if explicitly enabled
+        if not NOTIFICATIONS_ENABLED:
+            return
+
+        # Plain-language dialog body
         # Technical detail stays in the log and notification banner only.
         _friendly = {
             'PHISHING DETECTED!':        "Be careful — this page may be trying to steal your information. Do not enter any passwords or personal details.",
@@ -3005,4 +3092,25 @@ end tell
 
 if __name__ == "__main__":
     app = PayGuard()
-    app.app.run()
+    if HAS_RUMPS:
+        app.app.run()
+    elif HAS_PYSTRAY and (IS_LINUX or IS_WINDOWS):
+        # Run system tray icon on Linux/Windows
+        app.tray_icon.run()
+    else:
+        # CLI mode - keep alive with signal handling
+        print("\n🛡️  PayGuard is running in background...")
+        print("   Press Ctrl+C to stop")
+        try:
+            import signal
+            def signal_handler(sig, frame):
+                print("\n👋 PayGuard stopped")
+                app.stop_monitoring()
+                sys.exit(0)
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+            while True:
+                time.sleep(1)
+        except Exception:
+            while True:
+                time.sleep(1)
