@@ -207,12 +207,17 @@ class PayGuardApp:
 
 
 def create_icon(enabled=True):
-    """Create tray icon - EXACT copy from payguard_unified.py"""
+    """Create proper shield icon - green when on, black when off"""
     from PIL import ImageDraw
     size = 64
-    img = Image.new('RGB', (size, size), color='black')
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.ellipse([8, 8, 56, 56], fill='#10b981' if enabled else '#6b7280')
+    # Shield shape - green when on, black when off
+    if enabled:
+        draw.polygon([(32, 8), (56, 20), (56, 40), (32, 58), (8, 40), (8, 20)], fill=(16, 185, 129))
+        draw.polygon([(32, 14), (50, 24), (50, 38), (32, 52), (14, 38), (14, 24)], fill=(255, 255, 255))
+    else:
+        draw.polygon([(32, 8), (56, 20), (56, 40), (32, 58), (8, 40), (8, 20)], fill=(0, 0, 0))
     return img
 
 
