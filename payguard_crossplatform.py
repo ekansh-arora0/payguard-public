@@ -2,7 +2,6 @@
 """
 PayGuard - Simple Cross-Platform Phishing & Scam Detection
 Works on macOS and Linux
-Only scans screen for visual scam indicators
 """
 
 import os
@@ -13,7 +12,7 @@ import platform
 import logging
 import subprocess
 import io
-from PIL import Image
+from PIL import Image, ImageGrab
 
 SYSTEM = platform.system()
 
@@ -85,40 +84,55 @@ class PayGuardApp:
                 time.sleep(5)
     
     def capture_screen(self):
-        # Try PIL's screenshot first (works on macOS and Linux)
-        try:
-            from PIL import ImageGrab
-            img = ImageGrab.grab()
-            buf = io.BytesIO()
-            img.save(buf, format='PNG')
-            return buf.getvalue()
-        except Exception as e:
-            logger.debug(f"PIL screenshot failed: {e}")
+        logger.info("Attempting screen capture...")
         
-        # macOS: use screencapture command
+        # Method 1: Try PIL ImageGrab (works on some macOS configs)
+        try:
+            img = ImageGrab.grab()
+            if img.size[0] > 0:
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                logger.info("ImageGrab capture succeeded")
+                return buf.getvalue()
+        except Exception as e:
+            logger.debug(f"ImageGrab failed: {e}")
+        
+        # Method 2: macOS screencapture (most reliable on macOS)
         if SYSTEM == "Darwin":
             try:
-                result = subprocess.run(
-                    ["screencapture", "-x", "/tmp/payguard_screen.png"],
-                    capture_output=True, timeout=10
-                )
-                if result.returncode == 0 and os.path.exists("/tmp/payguard_screen.png"):
-                    with open("/tmp/payguard_screen.png", "rb") as f:
-                        return f.read()
+                # Use screencapture with explicit path
+                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
+                              capture_output=True, timeout=10)
+                if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                    with open("/tmp/pg_screen.png", "rb") as f:
+                        data = f.read()
+                    logger.info(f"screencapture succeeded ({len(data)} bytes)")
+                    return data
             except Exception as e:
-                logger.error(f"screencapture failed: {e}")
+                logger.error(f"screencapture error: {e}")
         
-        # Linux: try gnome-screenshot or scrot
+        # Method 3: Linux screenshot tools
         if SYSTEM == "Linux":
-            for cmd in ["gnome-screenshot -f", "scrot", "import -window root"]:
+            tools = ["gnome-screenshot", "scrot", "import"]
+            for tool in tools:
                 try:
-                    result = subprocess.run(cmd.split() + ["/tmp/payguard_screen.png"], 
-                                            capture_output=True, timeout=10)
-                    if result.returncode == 0 and os.path.exists("/tmp/payguard_screen.png"):
-                        with open("/tmp/payguard_screen.png", "rb") as f:
-                            return f.read()
-                except:
-                    pass
+                    if tool == "gnome-screenshot":
+                        subprocess.run([tool, "-f", "/tmp/pg_screen.png"], 
+                                      capture_output=True, timeout=10)
+                    elif tool == "scrot":
+                        subprocess.run([tool, "/tmp/pg_screen.png"], 
+                                      capture_output=True, timeout=10)
+                    else:
+                        subprocess.run([tool, "-window", "root", "/tmp/pg_screen.png"], 
+                                      capture_output=True, timeout=10)
+                    
+                    if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                        with open("/tmp/pg_screen.png", "rb") as f:
+                            data = f.read()
+                        logger.info(f"{tool} succeeded")
+                        return data
+                except Exception as e:
+                    logger.debug(f"{tool} failed: {e}")
         
         logger.error("All screen capture methods failed")
         return None
@@ -156,7 +170,7 @@ class PayGuardApp:
     def scan_screen(self):
         image_data = self.capture_screen()
         if not image_data:
-            logger.warning("No screen captured")
+            logger.warning("No screen captured - skipping scan")
             return
         
         result = self.analyze_screen(image_data)
@@ -220,7 +234,6 @@ class PayGuardApp:
 
 
 def create_icon(green=True):
-    """Create a simple shield icon"""
     size = 64
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     
