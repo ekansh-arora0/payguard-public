@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-PayGuard - Simple Phishing & Scam Detection
-Works on macOS and Linux
-Always scanning - no clicking needed
+PayGuard - Cross-Platform Phishing & Scam Detection
+Based on payguard_unified.py - simplified for cross-platform use
 """
 
 import os
@@ -15,7 +14,9 @@ import subprocess
 import io
 from PIL import Image
 
-SYSTEM = platform.system()
+IS_MAC = platform.system() == "Darwin"
+IS_LINUX = platform.system() == "Linux"
+IS_WINDOWS = platform.system() == "Windows"
 
 LOG_DIR = os.path.expanduser("~/payguard_logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -47,94 +48,144 @@ class PayGuardApp:
     def __init__(self):
         self.scans_performed = 0
         self.threats_detected = 0
-        self.screen_capture_works = False
         self.running = True
+        self.enabled = True
         
         logger.info("=== PayGuard started ===")
-        self._test_screen_capture()
         
-        # Always start scanning
+        # Start scanning
         self._start_scan_loop()
     
-    def _test_screen_capture(self):
-        """Test if screen capture works"""
-        try:
-            # macOS
-            if SYSTEM == "Darwin":
-                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
-                              capture_output=True, timeout=10)
-                if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                    self.screen_capture_works = True
-                    logger.info("Screen capture: OK")
-                    return
-            
-            # Linux - try mss
-            try:
-                import mss
-                with mss.mss() as sct:
-                    sct.grab(sct.monitors[1])
-                self.screen_capture_works = True
-                logger.info("Screen capture: OK (mss)")
-                return
-            except:
-                pass
-            
-            # Linux - scrot
-            try:
-                subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
-                if os.path.exists("/tmp/pg_screen.png"):
-                    self.screen_capture_works = True
-                    logger.info("Screen capture: OK (scrot)")
-                    return
-            except:
-                pass
-                
-        except Exception as e:
-            logger.info(f"Screen capture test: {e}")
+    def capture_screen(self):
+        """Capture screen - cross-platform (from unified)"""
         
-        logger.warning("Screen capture NOT available")
-    
-    def _capture(self):
-        if not self.screen_capture_works:
-            return None
-        
-        try:
-            if SYSTEM == "Darwin":
-                subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
-                              capture_output=True, timeout=10)
-                if os.path.exists("/tmp/pg_screen.png"):
-                    with open("/tmp/pg_screen.png", "rb") as f:
-                        return f.read()
-            else:
-                try:
-                    import mss
-                    with mss.mss() as sct:
-                        sct_img = sct.grab(sct.monitors[1])
-                        img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                        buf = io.BytesIO()
-                        img.save(buf, format='PNG')
-                        return buf.getvalue()
-                except:
-                    pass
-                
-                try:
-                    subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
-                    if os.path.exists("/tmp/pg_screen.png"):
-                        with open("/tmp/pg_screen.png", "rb") as f:
-                            return f.read()
-                except:
-                    pass
-        except:
-            pass
+        if IS_MAC:
+            return self._capture_screen_mac()
+        elif IS_LINUX:
+            return self._capture_screen_linux()
+        elif IS_WINDOWS:
+            return self._capture_screen_windows()
         
         return None
     
-    def _analyze(self, image_data):
+    def _capture_screen_mac(self):
+        """Capture screen on macOS using Quartz"""
+        try:
+            import Quartz
+            
+            image = Quartz.CGWindowListCreateImage(
+                Quartz.CGRectInfinite,
+                Quartz.kCGWindowListOptionOnScreenOnly,
+                Quartz.kCGNullWindowID,
+                Quartz.kCGWindowImageDefault
+            )
+            if image is None:
+                return self._capture_screen_subprocess()
+            
+            width = Quartz.CGImageGetWidth(image)
+            height = Quartz.CGImageGetHeight(image)
+            bytesperrow = Quartz.CGImageGetBytesPerRow(image)
+            pixeldata = Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(image))
+            
+            img = Image.frombytes('RGBA', (width, height), pixeldata, 'raw', 'BGRA', bytesperrow, 1)
+            return img
+            
+        except ImportError:
+            return self._capture_screen_subprocess()
+        except Exception as e:
+            logger.error(f"macOS capture error: {e}")
+            return self._capture_screen_subprocess()
+    
+    def _capture_screen_subprocess(self):
+        """Fallback: macOS screencapture"""
+        try:
+            tmp_path = "/tmp/pg_screen.png"
+            result = subprocess.run(
+                ["screencapture", "-x", tmp_path],
+                capture_output=True, timeout=10
+            )
+            if result.returncode != 0 or not os.path.exists(tmp_path):
+                return None
+            
+            img = Image.open(tmp_path)
+            img.load()
+            os.remove(tmp_path)
+            return img
+        except Exception as e:
+            logger.error(f"screencapture error: {e}")
+            return None
+    
+    def _capture_screen_linux(self):
+        """Capture screen on Linux using mss or scrot"""
+        # Try mss first
+        try:
+            import mss
+            
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]
+                screenshot = sct.grab(monitor)
+                img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+                return img
+        except ImportError:
+            logger.warning("mss not installed - install with: pip install mss")
+        except Exception as e:
+            logger.debug(f"mss error: {e}")
+        
+        # Fallback to scrot
+        try:
+            tmp_path = "/tmp/pg_screen.png"
+            subprocess.run(["scrot", tmp_path], capture_output=True, timeout=10)
+            if os.path.exists(tmp_path):
+                img = Image.open(tmp_path)
+                img.load()
+                os.remove(tmp_path)
+                return img
+        except Exception as e:
+            logger.debug(f"scrot error: {e}")
+        
+        # Fallback to gnome-screenshot
+        try:
+            tmp_path = "/tmp/pg_screen.png"
+            subprocess.run(["gnome-screenshot", "-f", tmp_path], capture_output=True, timeout=10)
+            if os.path.exists(tmp_path):
+                img = Image.open(tmp_path)
+                img.load()
+                os.remove(tmp_path)
+                return img
+        except Exception as e:
+            logger.debug(f"gnome-screenshot error: {e}")
+        
+        logger.error("Linux capture failed - no working method found")
+        return None
+    
+    def _capture_screen_windows(self):
+        """Capture screen on Windows using mss"""
+        try:
+            import mss
+            
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]
+                screenshot = sct.grab(monitor)
+                img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+                return img
+        except ImportError:
+            logger.error("mss not installed - install with: pip install mss")
+        except Exception as e:
+            logger.error(f"Windows capture error: {e}")
+        
+        return None
+    
+    def analyze_screen(self, image_data):
+        """Analyze screen for scam indicators (from unified logic)"""
         if not image_data:
             return None
         
         try:
-            img = Image.open(io.BytesIO(image_data))
+            if isinstance(image_data, bytes):
+                img = Image.open(io.BytesIO(image_data))
+            else:
+                img = image_data
+            
             img.thumbnail((400, 400))
             colors = img.convert("RGB").getcolors(maxcolors=100000)
             
@@ -143,19 +194,21 @@ class PayGuardApp:
             
             total = sum(count for count, _ in colors)
             
+            # Red = danger (scam warnings, virus alerts)
             red_count = sum(c for c, (r, g, b) in colors if r > 180 and g < 80 and b < 80)
+            # Orange = warning
             orange_count = sum(c for c, (r, g, b) in colors if r > 200 and g > 100 and g < 220 and b < 100)
             
             red_ratio = red_count / total if total > 0 else 0
             orange_ratio = orange_count / total if total > 0 else 0
             
             if red_ratio > 0.15:
-                return "Red warning screen detected"
+                return "Red warning screen detected - possible scam!"
             if orange_ratio > 0.15:
-                return "Orange warning screen detected"
+                return "Orange warning screen - be careful!"
             
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Analysis error: {e}")
         
         return None
     
@@ -164,14 +217,15 @@ class PayGuardApp:
         def loop():
             while self.running:
                 try:
-                    img_data = self._capture()
-                    if img_data:
-                        threat = self._analyze(img_data)
-                        if threat:
-                            self.threats_detected += 1
-                            self._show_alert(threat)
-                            logger.warning(f"THREAT: {threat}")
-                    self.scans_performed += 1
+                    if self.enabled:
+                        img = self.capture_screen()
+                        if img:
+                            threat = self.analyze_screen(img)
+                            if threat:
+                                self.threats_detected += 1
+                                self._show_alert(threat)
+                                logger.warning(f"THREAT: {threat}")
+                        self.scans_performed += 1
                 except Exception as e:
                     logger.error(f"Scan error: {e}")
                 time.sleep(3)
@@ -212,7 +266,6 @@ class PayGuardApp:
 
 
 def create_icon():
-    """Green shield icon"""
     size = 64
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     from PIL import ImageDraw
@@ -229,17 +282,17 @@ def create_menu(app):
         app.running = False
         icon.stop()
     
-    scan_status = f"Scans: {app.scans_performed}, Threats: {app.threats_detected}"
+    status = f"Scans: {app.scans_performed}, Threats: {app.threats_detected}"
     
     return (
-        Item("PayGuard - Always Scanning", lambda icon, item: None),
-        Item(scan_status, lambda icon, item: None),
+        Item("PayGuard - Active", lambda icon, item: None),
+        Item(status, lambda icon, item: None),
         Item("Quit", quit_click),
     )
 
 
 def main():
-    logger.info(f"PayGuard running on {SYSTEM}")
+    logger.info(f"PayGuard running on {platform.system()}")
     
     app = PayGuardApp()
     
