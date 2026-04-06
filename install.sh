@@ -1,6 +1,6 @@
 #!/bin/bash
 # PayGuard One-Liner Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/install.sh | bash
 
 set -e
 
@@ -41,7 +41,7 @@ fi
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "✓ Python $PYTHON_VERSION detected"
 
-# Clone repo
+# Clone repo (from public repo)
 INSTALL_DIR="$HOME/.payguard"
 if [ -d "$INSTALL_DIR/payguard" ]; then
     echo "📦 Updating existing installation..."
@@ -49,7 +49,7 @@ if [ -d "$INSTALL_DIR/payguard" ]; then
 else
     echo "📥 Downloading PayGuard..."
     mkdir -p "$INSTALL_DIR"
-    git clone --depth 1 https://github.com/ekansh-arora0/payguard.git "$INSTALL_DIR/payguard"
+    git clone --depth 1 https://github.com/ekansh-arora0/payguard-public.git "$INSTALL_DIR/payguard"
 fi
 
 cd "$INSTALL_DIR/payguard"
