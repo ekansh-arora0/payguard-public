@@ -12,7 +12,7 @@ import platform
 import logging
 import subprocess
 import io
-from PIL import Image, ImageGrab
+from PIL import Image
 
 SYSTEM = platform.system()
 
@@ -82,18 +82,7 @@ class PayGuardApp:
     def capture_screen(self):
         logger.info(">>> Trying to capture screen...")
         
-        # Method 1: PIL ImageGrab
-        try:
-            img = ImageGrab.grab()
-            if img.size[0] > 0:
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                logger.info(">>> SUCCESS: ImageGrab worked!")
-                return buf.getvalue()
-        except Exception as e:
-            logger.info(f">>> ImageGrab failed: {e}")
-        
-        # Method 2: macOS screencapture
+        # Method 1: macOS screencapture
         if SYSTEM == "Darwin":
             try:
                 subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
@@ -101,29 +90,59 @@ class PayGuardApp:
                 if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
                     with open("/tmp/pg_screen.png", "rb") as f:
                         data = f.read()
-                    logger.info(f">>> SUCCESS: screencapture worked!")
+                    logger.info(">>> SUCCESS: screencapture worked!")
                     return data
             except Exception as e:
                 logger.info(f">>> screencapture failed: {e}")
         
-        # Method 3: Linux
-        if SYSTEM == "Linux":
-            for tool in ["gnome-screenshot", "scrot"]:
-                try:
-                    if tool == "gnome-screenshot":
-                        subprocess.run([tool, "-f", "/tmp/pg_screen.png"], 
-                                      capture_output=True, timeout=10)
-                    else:
-                        subprocess.run([tool, "/tmp/pg_screen.png"], 
-                                      capture_output=True, timeout=10)
-                    
-                    if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
-                        with open("/tmp/pg_screen.png", "rb") as f:
-                            data = f.read()
-                        logger.info(f">>> SUCCESS: {tool} worked!")
-                        return data
-                except Exception as e:
-                    logger.info(f">>> {tool} failed: {e}")
+        # Method 2: Linux - try mss (most reliable on Linux)
+        try:
+            import mss
+            with mss.mss() as sct:
+                sct_img = sct.grab(sct.monitors[1])
+                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                logger.info(">>> SUCCESS: mss worked!")
+                return buf.getvalue()
+        except Exception as e:
+            logger.info(f">>> mss failed: {e}")
+        
+        # Method 3: Linux - import (ImageMagick)
+        try:
+            subprocess.run(["import", "-window", "root", "/tmp/pg_screen.png"], 
+                          capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                with open("/tmp/pg_screen.png", "rb") as f:
+                    data = f.read()
+                logger.info(">>> SUCCESS: import worked!")
+                return data
+        except Exception as e:
+            logger.info(f">>> import failed: {e}")
+        
+        # Method 4: Linux - gnome-screenshot
+        try:
+            subprocess.run(["gnome-screenshot", "-f", "/tmp/pg_screen.png"], 
+                          capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                with open("/tmp/pg_screen.png", "rb") as f:
+                    data = f.read()
+                logger.info(">>> SUCCESS: gnome-screenshot worked!")
+                return data
+        except Exception as e:
+            logger.info(f">>> gnome-screenshot failed: {e}")
+        
+        # Method 5: Linux - scrot
+        try:
+            subprocess.run(["scrot", "/tmp/pg_screen.png"], 
+                          capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
+                with open("/tmp/pg_screen.png", "rb") as f:
+                    data = f.read()
+                logger.info(">>> SUCCESS: scrot worked!")
+                return data
+        except Exception as e:
+            logger.info(f">>> scrot failed: {e}")
         
         logger.info(">>> ALL METHODS FAILED")
         return None

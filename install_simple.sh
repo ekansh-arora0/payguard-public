@@ -22,7 +22,12 @@ echo ""
 echo "Installing PayGuard..."
 echo ""
 
-pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
+if [[ "$OS" == "Linux" ]]; then
+    echo "Installing mss for Linux screen capture..."
+    pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
+else
+    pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
+fi
 
 INSTALL_DIR="$HOME/.payguard"
 mkdir -p "$INSTALL_DIR"
