@@ -50,14 +50,16 @@ class PayGuardApp:
         self.threats_detected = 0
         self.running = True
         self.enabled = True
+        self.last_alert_time = 0
+        self.alert_cooldown = 30  # 30 seconds between alerts
         
         logger.info("=== PayGuard started ===")
         
-        # Start scanning
+        # Start scanning every 30 seconds
         self._start_scan_loop()
     
     def capture_screen(self):
-        """Capture screen - cross-platform (from unified)"""
+        """Capture screen - cross-platform"""
         
         if IS_MAC:
             return self._capture_screen_mac()
@@ -69,7 +71,7 @@ class PayGuardApp:
         return None
     
     def _capture_screen_mac(self):
-        """Capture screen on macOS using Quartz"""
+        """Capture screen on macOS"""
         try:
             import Quartz
             
@@ -93,31 +95,24 @@ class PayGuardApp:
         except ImportError:
             return self._capture_screen_subprocess()
         except Exception as e:
-            logger.error(f"macOS capture error: {e}")
             return self._capture_screen_subprocess()
     
     def _capture_screen_subprocess(self):
         """Fallback: macOS screencapture"""
         try:
             tmp_path = "/tmp/pg_screen.png"
-            result = subprocess.run(
-                ["screencapture", "-x", tmp_path],
-                capture_output=True, timeout=10
-            )
-            if result.returncode != 0 or not os.path.exists(tmp_path):
-                return None
-            
-            img = Image.open(tmp_path)
-            img.load()
-            os.remove(tmp_path)
-            return img
-        except Exception as e:
-            logger.error(f"screencapture error: {e}")
-            return None
+            subprocess.run(["screencapture", "-x", tmp_path], capture_output=True, timeout=10)
+            if os.path.exists(tmp_path):
+                img = Image.open(tmp_path)
+                img.load()
+                os.remove(tmp_path)
+                return img
+        except:
+            pass
+        return None
     
     def _capture_screen_linux(self):
-        """Capture screen on Linux using mss or scrot"""
-        # Try mss first
+        """Capture screen on Linux using mss"""
         try:
             import mss
             
@@ -127,35 +122,21 @@ class PayGuardApp:
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                 return img
         except ImportError:
-            logger.warning("mss not installed - install with: pip install mss")
+            pass
         except Exception as e:
             logger.debug(f"mss error: {e}")
         
         # Fallback to scrot
         try:
-            tmp_path = "/tmp/pg_screen.png"
-            subprocess.run(["scrot", tmp_path], capture_output=True, timeout=10)
-            if os.path.exists(tmp_path):
-                img = Image.open(tmp_path)
+            subprocess.run(["scrot", "/tmp/pg_screen.png"], capture_output=True, timeout=10)
+            if os.path.exists("/tmp/pg_screen.png"):
+                img = Image.open("/tmp/pg_screen.png")
                 img.load()
-                os.remove(tmp_path)
+                os.remove("/tmp/pg_screen.png")
                 return img
-        except Exception as e:
-            logger.debug(f"scrot error: {e}")
+        except:
+            pass
         
-        # Fallback to gnome-screenshot
-        try:
-            tmp_path = "/tmp/pg_screen.png"
-            subprocess.run(["gnome-screenshot", "-f", tmp_path], capture_output=True, timeout=10)
-            if os.path.exists(tmp_path):
-                img = Image.open(tmp_path)
-                img.load()
-                os.remove(tmp_path)
-                return img
-        except Exception as e:
-            logger.debug(f"gnome-screenshot error: {e}")
-        
-        logger.error("Linux capture failed - no working method found")
         return None
     
     def _capture_screen_windows(self):
@@ -168,15 +149,12 @@ class PayGuardApp:
                 screenshot = sct.grab(monitor)
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                 return img
-        except ImportError:
-            logger.error("mss not installed - install with: pip install mss")
-        except Exception as e:
-            logger.error(f"Windows capture error: {e}")
-        
+        except:
+            pass
         return None
     
     def analyze_screen(self, image_data):
-        """Analyze screen for scam indicators (from unified logic)"""
+        """Analyze screen for scam indicators"""
         if not image_data:
             return None
         
@@ -186,8 +164,9 @@ class PayGuardApp:
             else:
                 img = image_data
             
-            img.thumbnail((400, 400))
-            colors = img.convert("RGB").getcolors(maxcolors=100000)
+            # Analyze a small sample
+            img.thumbnail((200, 200))
+            colors = img.convert("RGB").getcolors(maxcolors=50000)
             
             if not colors:
                 return None
@@ -195,25 +174,26 @@ class PayGuardApp:
             total = sum(count for count, _ in colors)
             
             # Red = danger (scam warnings, virus alerts)
-            red_count = sum(c for c, (r, g, b) in colors if r > 180 and g < 80 and b < 80)
+            red_count = sum(c for c, (r, g, b) in colors if r > 200 and g < 60 and b < 60)
             # Orange = warning
-            orange_count = sum(c for c, (r, g, b) in colors if r > 200 and g > 100 and g < 220 and b < 100)
+            orange_count = sum(c for c, (r, g, b) in colors if r > 220 and g > 100 and g < 180 and b < 80)
             
             red_ratio = red_count / total if total > 0 else 0
             orange_ratio = orange_count / total if total > 0 else 0
             
-            if red_ratio > 0.15:
+            # Only alert on strong signals
+            if red_ratio > 0.20:
                 return "Red warning screen detected - possible scam!"
-            if orange_ratio > 0.15:
+            if orange_ratio > 0.25:
                 return "Orange warning screen - be careful!"
             
-        except Exception as e:
-            logger.error(f"Analysis error: {e}")
+        except:
+            pass
         
         return None
     
     def _start_scan_loop(self):
-        """Background scan loop"""
+        """Background scan loop - every 30 seconds"""
         def loop():
             while self.running:
                 try:
@@ -222,16 +202,35 @@ class PayGuardApp:
                         if img:
                             threat = self.analyze_screen(img)
                             if threat:
-                                self.threats_detected += 1
-                                self._show_alert(threat)
-                                logger.warning(f"THREAT: {threat}")
+                                now = time.time()
+                                if now - self.last_alert_time > self.alert_cooldown:
+                                    self.last_alert_time = now
+                                    self.threats_detected += 1
+                                    self._show_alert(threat)
+                                    logger.warning(f"THREAT: {threat}")
                         self.scans_performed += 1
                 except Exception as e:
                     logger.error(f"Scan error: {e}")
-                time.sleep(3)
+                time.sleep(30)  # Scan every 30 seconds instead of 3
         
         threading.Thread(target=loop, daemon=True).start()
-        logger.info("Scanning started")
+        logger.info("Scanning every 30 seconds")
+    
+    def manual_scan(self):
+        """Manual scan when user clicks"""
+        try:
+            img = self.capture_screen()
+            if img:
+                threat = self.analyze_screen(img)
+                if threat:
+                    self.threats_detected += 1
+                    self._show_alert(threat)
+                    logger.warning(f"THREAT: {threat}")
+                    return True
+            self.scans_performed += 1
+        except Exception as e:
+            logger.error(f"Manual scan error: {e}")
+        return False
     
     def _show_alert(self, message):
         if not HAS_TKINTER:
@@ -278,6 +277,11 @@ def create_icon():
 def create_menu(app):
     from pystray import MenuItem as Item
     
+    def scan_now(icon, item):
+        result = app.manual_scan()
+        if not result:
+            logger.info("No threats detected")
+    
     def quit_click(icon, item):
         app.running = False
         icon.stop()
@@ -285,8 +289,9 @@ def create_menu(app):
     status = f"Scans: {app.scans_performed}, Threats: {app.threats_detected}"
     
     return (
-        Item("PayGuard - Active", lambda icon, item: None),
+        Item("PayGuard - Scanning", lambda icon, item: None),
         Item(status, lambda icon, item: None),
+        Item("Scan Now", scan_now),
         Item("Quit", quit_click),
     )
 
