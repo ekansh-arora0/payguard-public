@@ -16,19 +16,15 @@ from PIL import Image, ImageGrab
 
 SYSTEM = platform.system()
 
-LOG_DIR = os.path.expanduser("~/Library/Logs/PayGuard")
-if SYSTEM == "Windows":
-    LOG_DIR = os.path.expanduser("~/AppData/Local/PayGuard/Logs")
-elif SYSTEM == "Linux":
-    LOG_DIR = os.path.expanduser("~/.local/share/payguard/logs")
+LOG_DIR = os.path.expanduser("~/payguard_logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(message)s',
     handlers=[
         logging.FileHandler(f"{LOG_DIR}/payguard.log"),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -57,7 +53,7 @@ class PayGuardApp:
         self.last_alert_time = 0
         self.alert_cooldown = 10
         
-        logger.info("PayGuard initialized")
+        logger.info("=== PayGuard started ===")
     
     def start_monitoring(self):
         if self.monitoring_active:
@@ -65,13 +61,13 @@ class PayGuardApp:
         self.monitoring_active = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        logger.info("Monitoring started")
+        logger.info("Monitoring ON")
     
     def stop_monitoring(self):
         self.monitoring_active = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2)
-        logger.info("Monitoring stopped")
+        logger.info("Monitoring OFF")
     
     def _monitor_loop(self):
         while self.monitoring_active:
@@ -84,57 +80,52 @@ class PayGuardApp:
                 time.sleep(5)
     
     def capture_screen(self):
-        logger.info("Attempting screen capture...")
+        logger.info(">>> Trying to capture screen...")
         
-        # Method 1: Try PIL ImageGrab (works on some macOS configs)
+        # Method 1: PIL ImageGrab
         try:
             img = ImageGrab.grab()
             if img.size[0] > 0:
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
-                logger.info("ImageGrab capture succeeded")
+                logger.info(">>> SUCCESS: ImageGrab worked!")
                 return buf.getvalue()
         except Exception as e:
-            logger.debug(f"ImageGrab failed: {e}")
+            logger.info(f">>> ImageGrab failed: {e}")
         
-        # Method 2: macOS screencapture (most reliable on macOS)
+        # Method 2: macOS screencapture
         if SYSTEM == "Darwin":
             try:
-                # Use screencapture with explicit path
                 subprocess.run(["screencapture", "-x", "/tmp/pg_screen.png"], 
                               capture_output=True, timeout=10)
                 if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
                     with open("/tmp/pg_screen.png", "rb") as f:
                         data = f.read()
-                    logger.info(f"screencapture succeeded ({len(data)} bytes)")
+                    logger.info(f">>> SUCCESS: screencapture worked!")
                     return data
             except Exception as e:
-                logger.error(f"screencapture error: {e}")
+                logger.info(f">>> screencapture failed: {e}")
         
-        # Method 3: Linux screenshot tools
+        # Method 3: Linux
         if SYSTEM == "Linux":
-            tools = ["gnome-screenshot", "scrot", "import"]
-            for tool in tools:
+            for tool in ["gnome-screenshot", "scrot"]:
                 try:
                     if tool == "gnome-screenshot":
                         subprocess.run([tool, "-f", "/tmp/pg_screen.png"], 
                                       capture_output=True, timeout=10)
-                    elif tool == "scrot":
-                        subprocess.run([tool, "/tmp/pg_screen.png"], 
-                                      capture_output=True, timeout=10)
                     else:
-                        subprocess.run([tool, "-window", "root", "/tmp/pg_screen.png"], 
+                        subprocess.run([tool, "/tmp/pg_screen.png"], 
                                       capture_output=True, timeout=10)
                     
                     if os.path.exists("/tmp/pg_screen.png") and os.path.getsize("/tmp/pg_screen.png") > 0:
                         with open("/tmp/pg_screen.png", "rb") as f:
                             data = f.read()
-                        logger.info(f"{tool} succeeded")
+                        logger.info(f">>> SUCCESS: {tool} worked!")
                         return data
                 except Exception as e:
-                    logger.debug(f"{tool} failed: {e}")
+                    logger.info(f">>> {tool} failed: {e}")
         
-        logger.error("All screen capture methods failed")
+        logger.info(">>> ALL METHODS FAILED")
         return None
     
     def analyze_screen(self, image_data):
@@ -158,9 +149,9 @@ class PayGuardApp:
             orange_ratio = orange_count / total if total > 0 else 0
             
             if red_ratio > 0.15:
-                return {"is_scam": True, "confidence": 75, "reason": "Red warning screen detected"}
+                return {"is_scam": True, "confidence": 75, "reason": "Red warning screen"}
             if orange_ratio > 0.15:
-                return {"is_scam": True, "confidence": 60, "reason": "Orange warning screen detected"}
+                return {"is_scam": True, "confidence": 60, "reason": "Orange warning screen"}
             
         except Exception as e:
             logger.error(f"Analysis error: {e}")
@@ -170,7 +161,6 @@ class PayGuardApp:
     def scan_screen(self):
         image_data = self.capture_screen()
         if not image_data:
-            logger.warning("No screen captured - skipping scan")
             return
         
         result = self.analyze_screen(image_data)
@@ -182,7 +172,7 @@ class PayGuardApp:
             if now - self.last_alert_time > self.alert_cooldown:
                 self.last_alert_time = now
                 self.show_alert(result.get("reason", "Scam detected!"))
-                logger.warning(f"THREAT: {result.get('reason')}")
+                logger.warning(f"THREAT DETECTED: {result.get('reason')}")
     
     def show_alert(self, message):
         if not HAS_TKINTER:
@@ -290,7 +280,7 @@ def main():
         create_menu(app)
     )
     
-    logger.info("PayGuard ready!")
+    logger.info("PayGuard ready! Shield icon should appear.")
     try:
         icon.run()
     except KeyboardInterrupt:
