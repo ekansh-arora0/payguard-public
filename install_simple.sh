@@ -57,9 +57,9 @@ pip3 install --user pystray Pillow mss pyperclip 2>/dev/null || pip3 install pys
 INSTALL_DIR="$HOME/.payguard"
 mkdir -p "$INSTALL_DIR"
 
-# Copy the cross-platform app
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cp "$SCRIPT_DIR/payguard_crossplatform.py" "$INSTALL_DIR/"
+# Download the cross-platform app directly
+echo "Downloading PayGuard..."
+curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard-public/main/payguard_crossplatform.py -o "$INSTALL_DIR/payguard_crossplatform.py"
 
 # Step 4: Create launcher
 cat > "$HOME/run_payguard.sh" << 'EOF'
