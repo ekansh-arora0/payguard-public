@@ -47,7 +47,12 @@ echo ""
 echo "Installing PayGuard..."
 echo ""
 
-pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
+# macOS doesn't need mss (uses screencapture), others do
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
+else
+    pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
+fi
 
 INSTALL_DIR="$HOME/.payguard"
 mkdir -p "$INSTALL_DIR"

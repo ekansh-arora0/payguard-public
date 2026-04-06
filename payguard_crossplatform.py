@@ -93,17 +93,7 @@ class PayGuardApp:
                 time.sleep(5)
     
     def capture_screen(self):
-        if HAS_MSS:
-            try:
-                with mss.mss() as sct:
-                    sct_img = sct.grab(sct.monitors[1])
-                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                    buf = io.BytesIO()
-                    img.save(buf, format='PNG')
-                    return buf.getvalue()
-            except Exception as e:
-                logger.error(f"mss capture failed: {e}")
-        
+        # macOS: use screencapture
         if SYSTEM == "Darwin":
             try:
                 result = subprocess.run(
@@ -115,6 +105,18 @@ class PayGuardApp:
                         return f.read()
             except Exception as e:
                 logger.error(f"screencapture failed: {e}")
+        
+        # Windows/Linux: try mss
+        if HAS_MSS:
+            try:
+                with mss.mss() as sct:
+                    sct_img = sct.grab(sct.monitors[1])
+                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    return buf.getvalue()
+            except Exception as e:
+                logger.error(f"mss capture failed: {e}")
         
         return None
     
