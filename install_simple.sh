@@ -1,5 +1,5 @@
 #!/bin/bash
-# PayGuard Simple Installer - One Command for All Platforms
+# PayGuard Simple Installer - macOS and Linux
 
 echo "=========================================="
 echo "  Welcome to PayGuard Setup"
@@ -8,51 +8,21 @@ echo "=========================================="
 echo ""
 
 OS="$(uname -s)"
-if [ "$OS" = "Darwin" ]; then
-    PLATFORM="mac"
-elif [ "$OS" = "Linux" ]; then
-    PLATFORM="linux"
-elif [[ "$OS" == "MINGW"* ]] || [[ "$OS" == "MSYS"* ]]; then
-    PLATFORM="windows"
-else
-    PLATFORM="unknown"
-fi
-
-echo "Detected: $PLATFORM"
+echo "Detected: $OS"
 echo ""
 
 if ! command -v python3 &>/dev/null; then
     echo "Python is not installed."
-    echo ""
-    if [ "$PLATFORM" = "mac" ]; then
-        echo "On Mac, please:"
-        echo "1. Open the App Store"
-        echo "2. Search for Xcode"
-        echo "3. Install Xcode (free)"
-        echo "4. Then run: ruby -e \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)\""
-        echo "5. Then run: brew install python3"
-    elif [ "$PLATFORM" = "linux" ]; then
-        echo "Please run in terminal:"
-        echo "  sudo apt-get update"
-        echo "  sudo apt-get install python3"
-    fi
-    echo ""
-    echo "Once Python is installed, run this script again."
+    echo "Please install Python from python.org"
     exit 1
 fi
 
 echo "Python found!"
 echo ""
-
 echo "Installing PayGuard..."
 echo ""
 
-# macOS doesn't need mss (uses screencapture), others do
-if [[ "$(uname -s)" == "Darwin" ]]; then
-    pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
-else
-    pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
-fi
+pip3 install --user pystray Pillow 2>/dev/null || pip3 install pystray Pillow 2>/dev/null || true
 
 INSTALL_DIR="$HOME/.payguard"
 mkdir -p "$INSTALL_DIR"
@@ -73,7 +43,6 @@ echo ""
 echo "Starting PayGuard now..."
 echo ""
 echo "You should see a shield icon in your menu bar or system tray."
-echo "Click it to turn protection ON or OFF."
 echo ""
 
 cd "$INSTALL_DIR"

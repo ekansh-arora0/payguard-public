@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PayGuard - Simple Cross-Platform Phishing & Scam Detection
-Works on Windows, macOS, and Linux
+Works on macOS and Linux
 Only scans screen for visual scam indicators
 """
 
@@ -13,7 +13,7 @@ import platform
 import logging
 import subprocess
 import io
-from PIL import Image, ImageDraw
+from PIL import Image
 
 SYSTEM = platform.system()
 
@@ -36,17 +36,9 @@ logger = logging.getLogger(__name__)
 
 try:
     import pystray
-    HAS_PYSTRAY = True
 except ImportError:
     logger.error("pystray not installed. Run: pip install pystray Pillow")
     sys.exit(1)
-
-try:
-    import mss
-    HAS_MSS = True
-except ImportError:
-    HAS_MSS = False
-    logger.warning("mss not available")
 
 try:
     import tkinter as tk
@@ -93,31 +85,42 @@ class PayGuardApp:
                 time.sleep(5)
     
     def capture_screen(self):
-        # macOS: use screencapture
+        # Try PIL's screenshot first (works on macOS and Linux)
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            return buf.getvalue()
+        except Exception as e:
+            logger.debug(f"PIL screenshot failed: {e}")
+        
+        # macOS: use screencapture command
         if SYSTEM == "Darwin":
             try:
                 result = subprocess.run(
                     ["screencapture", "-x", "/tmp/payguard_screen.png"],
                     capture_output=True, timeout=10
                 )
-                if result.returncode == 0:
+                if result.returncode == 0 and os.path.exists("/tmp/payguard_screen.png"):
                     with open("/tmp/payguard_screen.png", "rb") as f:
                         return f.read()
             except Exception as e:
                 logger.error(f"screencapture failed: {e}")
         
-        # Windows/Linux: try mss
-        if HAS_MSS:
-            try:
-                with mss.mss() as sct:
-                    sct_img = sct.grab(sct.monitors[1])
-                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                    buf = io.BytesIO()
-                    img.save(buf, format='PNG')
-                    return buf.getvalue()
-            except Exception as e:
-                logger.error(f"mss capture failed: {e}")
+        # Linux: try gnome-screenshot or scrot
+        if SYSTEM == "Linux":
+            for cmd in ["gnome-screenshot -f", "scrot", "import -window root"]:
+                try:
+                    result = subprocess.run(cmd.split() + ["/tmp/payguard_screen.png"], 
+                                            capture_output=True, timeout=10)
+                    if result.returncode == 0 and os.path.exists("/tmp/payguard_screen.png"):
+                        with open("/tmp/payguard_screen.png", "rb") as f:
+                            return f.read()
+                except:
+                    pass
         
+        logger.error("All screen capture methods failed")
         return None
     
     def analyze_screen(self, image_data):
@@ -153,6 +156,7 @@ class PayGuardApp:
     def scan_screen(self):
         image_data = self.capture_screen()
         if not image_data:
+            logger.warning("No screen captured")
             return
         
         result = self.analyze_screen(image_data)
@@ -215,44 +219,19 @@ class PayGuardApp:
         threading.Thread(target=show_dialog, daemon=True).start()
 
 
-def load_icon():
-    """Load shield icon - try multiple sources"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    icon_paths = [
-        os.path.join(script_dir, "icon.png"),
-        os.path.join(script_dir, "..", "extension", "icons", "icon128.png"),
-        os.path.join(script_dir, "extension", "icons", "icon128.png"),
-    ]
-    
-    for path in icon_paths:
-        if os.path.exists(path):
-            try:
-                img = Image.open(path)
-                return img.convert("RGBA")
-            except:
-                pass
-    
-    return create_icon_fallback()
-
-
-def create_icon_fallback():
+def create_icon(green=True):
     """Create a simple shield icon"""
     size = 64
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    
+    from PIL import ImageDraw
     draw = ImageDraw.Draw(img)
     
+    color = (0, 180, 0, 255) if green else (200, 0, 0, 255)
     draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
-                 fill=(0, 150, 0, 255), outline=(255, 255, 255, 255), width=2)
-    draw.polygon([(32, 4), (60, 16), (60, 40), (32, 60), (4, 40), (4, 16)], 
-                 fill=(0, 180, 0, 255))
+                 fill=color, outline=(255, 255, 255, 255), width=2)
     
     return img
-
-
-def create_icon(green=True):
-    """Create tray icon - green or red shield"""
-    return create_icon_fallback()
 
 
 def create_menu(app):
