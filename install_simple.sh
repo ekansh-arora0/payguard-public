@@ -1,15 +1,16 @@
 #!/bin/bash
-# PayGuard Installer
+# PayGuard Installer - installs ALL dependencies
 
 echo "Installing PayGuard..."
 
-# Install required packages
-pip3 install --user pystray Pillow mss 2>/dev/null || pip3 install pystray Pillow mss 2>/dev/null || true
+# Install ALL Python packages that might be needed
+pip3 install --user pystray Pillow mss pyperclip 2>/dev/null || pip3 install pystray Pillow mss pyperclip 2>/dev/null || true
 
-# Linux: install scrot if not present
-if [[ "$(uname -s)" == "Linux" ]] && ! command -v scrot &>/dev/null; then
-    echo "Installing scrot..."
-    sudo apt-get install -y scrot 2>/dev/null || sudo dnf install -y scrot 2>/dev/null || true
+# Install screenshot tools for Linux
+if [[ "$(uname -s)" == "Linux" ]]; then
+    echo "Installing screenshot tools..."
+    sudo apt-get update -qq
+    sudo apt-get install -y scrot gnome-screenshot 2>/dev/null || sudo dnf install -y scrot 2>/dev/null || true
 fi
 
 mkdir -p "$HOME/.payguard"
