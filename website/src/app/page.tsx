@@ -383,9 +383,9 @@ export default function Home() {
   const usersCount = useCountUp(stats.active_users)
   const blockedCount = useCountUp(stats.high_risk_detected)
 
-  const macCommand = 'curl -fsSL https://payguard.app/install | bash'
-  const winCommand = 'pip install pystray Pillow mss pyperclip && curl -fsSL https://payguard.app/payguard_crossplatform.py -o payguard.py && python payguard.py'
-  const linuxCommand = 'curl -fsSL https://payguard.app/install | bash'
+  const macCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install_simple.sh | bash'
+  const winCommand = 'pip install pystray Pillow mss pyperclip && curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/payguard_crossplatform.py -o payguard.py && python payguard.py'
+  const linuxCommand = 'curl -fsSL https://raw.githubusercontent.com/ekansh-arora0/payguard/main/install_simple.sh | bash'
 
   useEffect(() => {
     const fetchStats = async () => {
